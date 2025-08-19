@@ -18,7 +18,12 @@ export const generateId = (prefix: string, currentLength: number): string => {
 };
 
 export const getStatusInfo = (status: string, type: 'user' | 'vehicle' = 'user') => {
-  return statusOptions[type].find(s => s.value === status);
+  // statusOptions is a simple array, not typed by category
+  return statusOptions.find(s => s.value === status) || { 
+    value: status, 
+    label: status.charAt(0).toUpperCase() + status.slice(1), 
+    color: 'gray' 
+  };
 };
 
 export const calculatePercentageChange = (current: number, previous: number): number => {
@@ -42,5 +47,51 @@ export const getLicenseStatus = (expiryDate: string) => {
     return { status: 'expiring', color: 'bg-yellow-100 text-yellow-800', label: 'Expiring Soon' };
   } else {
     return { status: 'valid', color: 'bg-green-100 text-green-800', label: 'Valid' };
+  }
+};
+
+// Helper function to get status badge with consistent styling
+export const getStatusBadgeClass = (status: string): string => {
+  const statusInfo = getStatusInfo(status);
+  
+  switch (statusInfo.color) {
+    case 'green':
+      return 'bg-green-100 text-green-800';
+    case 'red':
+      return 'bg-red-100 text-red-800';
+    case 'yellow':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'blue':
+      return 'bg-blue-100 text-blue-800';
+    case 'purple':
+      return 'bg-purple-100 text-purple-800';
+    case 'orange':
+      return 'bg-orange-100 text-orange-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+};
+
+// Role badge helper
+export const getRoleBadgeClass = (role: string): string => {
+  switch (role) {
+    case 'super_admin':
+      return 'bg-red-100 text-red-800';
+    case 'admin':
+      return 'bg-purple-100 text-purple-800';
+    case 'regional_manager':
+      return 'bg-blue-100 text-blue-800';
+    case 'district_manager':
+      return 'bg-green-100 text-green-800';
+    case 'admin_operation':
+      return 'bg-indigo-100 text-indigo-800';
+    case 'admin_hrm':
+      return 'bg-pink-100 text-pink-800';
+    case 'district_incident_reporter':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'station_worker':
+      return 'bg-gray-100 text-gray-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
   }
 };

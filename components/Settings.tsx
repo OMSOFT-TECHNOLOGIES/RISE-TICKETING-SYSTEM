@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from './AuthContext';
+import { useTheme } from './ThemeProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -29,6 +30,7 @@ import { toast } from 'sonner';
 
 export function Settings() {
   const { user } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [showPassword, setShowPassword] = useState(false);
   const [settings, setSettings] = useState({
     // Profile settings
@@ -47,8 +49,8 @@ export function Settings() {
     maintenanceAlerts: true,
     tripUpdates: true,
     
-    // System preferences
-    theme: 'light',
+    // System preferences (theme is now managed by ThemeProvider)
+    // theme: 'light', // Removed - now using ThemeProvider
     language: 'en',
     timezone: 'Africa/Accra',
     dateFormat: 'dd/mm/yyyy',
@@ -68,6 +70,8 @@ export function Settings() {
   const handleSave = (section: string) => {
     // Simulate saving settings
     toast.success(`${section} settings saved successfully`);
+    
+    // Theme changes are automatically saved by the ThemeProvider
   };
 
   const handleProfileUpdate = () => {
@@ -357,7 +361,7 @@ export function Settings() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="theme">Theme</Label>
-                  <Select value={settings.theme} onValueChange={(value) => setSettings({...settings, theme: value})}>
+                  <Select value={theme} onValueChange={(value: 'light' | 'dark' | 'system') => setTheme(value)}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -367,6 +371,9 @@ export function Settings() {
                       <SelectItem value="system">System</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-sm text-muted-foreground">
+                    Choose your preferred theme or follow your system settings
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="language">Language</Label>
@@ -444,6 +451,9 @@ export function Settings() {
                 <Save className="h-4 w-4 mr-2" />
                 Save Preferences
               </Button>
+              <p className="text-sm text-muted-foreground">
+                Theme changes are applied immediately and saved automatically.
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

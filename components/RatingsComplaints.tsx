@@ -187,8 +187,8 @@ export function RatingsComplaints() {
   const [responseText, setResponseText] = useState('');
   const [dateRange, setDateRange] = useState('30');
 
-  // Access control
-  if (user?.role !== 'admin') {
+  // Access control - Super Admin and Admin have full access
+  if (user?.role !== 'admin' && user?.role !== 'super_admin') {
     return (
       <div className="p-6 text-center">
         <AlertTriangle className="h-16 w-16 mx-auto mb-4 text-gray-400" />

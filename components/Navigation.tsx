@@ -1,41 +1,36 @@
 import React from 'react';
-import { useAuth } from './AuthContext';
-import { Button } from './ui/button';
 import { 
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-  SidebarTrigger
-} from './ui/sidebar';
-import { 
-  LayoutDashboard, 
-  MapPin, 
-  Bus, 
-  UserCheck, 
-  Route, 
-  FileText, 
+  Building2, 
+  Car, 
   Users, 
+  MapPin, 
+  BarChart3, 
+  Settings, 
+  UserCheck, 
+  Ticket, 
+  MessageSquare, 
+  AlertTriangle,
   DollarSign,
-  Ticket,
-  Settings,
-  Crown,
-  Building,
-  ChevronRight,
-  ChevronLeft,
-  UserPlus,
-  MessageSquare,
-  AlertTriangle
+  Route,
+  Plus,
+  FileText,
+  Shield,
+  Zap,
+  Heart
 } from 'lucide-react';
+import { 
+  Sidebar, 
+  SidebarContent, 
+  SidebarHeader, 
+  SidebarMenu, 
+  SidebarMenuItem, 
+  SidebarMenuButton,
+  useSidebar 
+} from './ui/sidebar';
+import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
-import { Avatar, AvatarFallback } from './ui/avatar';
+import { useAuth } from './AuthContext';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 
 interface NavigationProps {
   currentPage: string;
@@ -43,254 +38,401 @@ interface NavigationProps {
   isMobile?: boolean;
 }
 
-const navigationItems = [
-  {
-    title: "Overview",
-    items: [
-      {
-        key: 'dashboard',
-        title: 'Dashboard',
-        icon: LayoutDashboard,
-        roles: ['admin', 'worker']
-      }
-    ]
-  },
-  {
-    title: "Operations",
-    items: [
-      {
-        key: 'stations',
-        title: 'Stations',
-        icon: MapPin,
-        roles: ['admin', 'worker']
-      },
-      {
-        key: 'vehicles',
-        title: 'Vehicles',
-        icon: Bus,
-        roles: ['admin', 'worker']
-      },
-      {
-        key: 'drivers',
-        title: 'Drivers',
-        icon: UserCheck,
-        roles: ['admin', 'worker']
-      },
-      {
-        key: 'trips',
-        title: 'Trip Booking',
-        icon: Route,
-        roles: ['admin', 'worker']
-      },
-      {
-        key: 'passengers',
-        title: 'Passengers',
-        icon: UserPlus,
-        roles: ['admin', 'worker']
-      }
-    ]
-  },
-  {
-    title: "Management",
-    items: [
-      {
-        key: 'tickets',
-        title: 'Passenger Tickets',
-        icon: Ticket,
-        roles: ['admin']
-      },
-      {
-        key: 'users',
-        title: 'User Management',
-        icon: Users,
-        roles: ['admin']
-      },
-      {
-        key: 'revenue',
-        title: 'Revenue',
-        icon: DollarSign,
-        roles: ['admin']
-      },
-      {
-        key: 'ratings-complaints',
-        title: 'Ratings & Complaints',
-        icon: MessageSquare,
-        roles: ['admin']
-      },
-      {
-        key: 'accident-analysis',
-        title: 'Accident Analysis',
-        icon: AlertTriangle,
-        roles: ['admin']
-      },
-      {
-        key: 'reports',
-        title: 'Reports',
-        icon: FileText,
-        roles: ['admin', 'worker']
-      }
-    ]
-  }
-];
-
 export function Navigation({ currentPage, onPageChange, isMobile = false }: NavigationProps) {
-  const { user } = useAuth();
-  const { state, open, setOpen, toggleSidebar } = useSidebar();
+  const { user, hasPermission, isSuperAdmin } = useAuth();
+  const { state } = useSidebar();
   
-  const hasAccess = (roles: string[]) => {
-    return user?.role && roles.includes(user.role);
-  };
+  // Check if sidebar is collapsed (for desktop)
+  const isCollapsed = state === 'collapsed' && !isMobile;
 
-  const getUserInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
-  };
-
-  const getBadgeForItem = (key: string) => {
-    switch (key) {
-      case 'tickets':
-        return <Badge variant="secondary" className="ml-auto h-5 px-1.5 text-xs">12</Badge>;
-      case 'trips':
-        return <Badge variant="destructive" className="ml-auto h-5 px-1.5 text-xs">3</Badge>;
-      case 'passengers':
-        return <Badge variant="outline" className="ml-auto h-5 px-1.5 text-xs">New</Badge>;
-      case 'ratings-complaints':
-        return <Badge variant="secondary" className="ml-auto h-5 px-1.5 text-xs bg-orange-100 text-orange-700">5</Badge>;
-      case 'accident-analysis':
-        return <Badge variant="destructive" className="ml-auto h-5 px-1.5 text-xs">3</Badge>;
-      default:
-        return null;
+  const menuItems = [
+    {
+      title: 'Dashboard',
+      icon: BarChart3,
+      href: 'dashboard',
+      permission: 'view_dashboard',
+      badge: null
+    },
+    {
+      title: 'Station Management',
+      icon: Building2,
+      href: 'stations',
+      permission: 'manage_stations',
+      badge: null
+    },
+    {
+      title: 'Union Management',
+      icon: Shield,
+      href: 'unions',
+      permission: 'manage_unions',
+      badge: null,
+      restrictedAccess: true // Marked as restricted for regular admins
+    },
+    {
+      title: 'Vehicle Management',
+      icon: Car,
+      href: 'vehicles',
+      permission: 'manage_vehicles',
+      badge: null
+    },
+    {
+      title: 'Driver Management',
+      icon: UserCheck,
+      href: 'drivers',
+      permission: 'manage_drivers',
+      badge: null
+    },
+    {
+      title: 'Trip Management',
+      icon: Route,
+      href: 'trips',
+      permission: 'manage_trips',
+      badge: null
+    },
+    {
+      title: 'Passenger Management',
+      icon: Users,
+      href: 'passengers',
+      permission: 'manage_passengers',
+      badge: null
     }
+  ];
+
+  const incidentMenuItems = [
+    {
+      title: 'Incident Management',
+      icon: AlertTriangle,
+      href: 'incidents',
+      permission: 'manage_incidents',
+      badge: null
+    },
+    {
+      title: 'Incident Claims',
+      icon: Heart,
+      href: 'incident-claims',
+      permission: 'manage_claims',
+      badge: '2',
+      restrictedAccess: true
+    },
+    {
+      title: 'Death Trap Reports',
+      icon: Zap,
+      href: 'death-traps',
+      permission: 'view_death_traps',
+      badge: '3',
+      restrictedAccess: true
+    },
+    {
+      title: 'Accident Analysis',
+      icon: FileText,
+      href: 'accident-analysis',
+      permission: 'view_reports',
+      badge: null
+    }
+  ];
+
+  const reportMenuItems = [
+    {
+      title: 'Reports',
+      icon: BarChart3,
+      href: 'reports',
+      permission: 'view_reports',
+      badge: null
+    },
+    {
+      title: 'Revenue Analytics',
+      icon: DollarSign,
+      href: 'revenue',
+      permission: 'view_revenue',
+      badge: null
+    },
+    {
+      title: 'Passenger Tickets',
+      icon: Ticket,
+      href: 'tickets',
+      permission: 'view_tickets',
+      badge: null
+    },
+    {
+      title: 'Ratings & Complaints',
+      icon: MessageSquare,
+      href: 'ratings-complaints',
+      permission: 'view_reports',
+      badge: null
+    }
+  ];
+
+  const adminMenuItems = [
+    {
+      title: 'User Management',
+      icon: Users,
+      href: 'users',
+      permission: 'manage_users',
+      badge: null,
+      restrictedAccess: true
+    }
+  ];
+
+  const renderMenuItem = (item: any) => {
+    // Super Admin gets access to EVERYTHING - no permission checks needed
+    if (isSuperAdmin()) {
+      return (
+        <SidebarMenuItem key={item.href}>
+          <SidebarMenuButton 
+            onClick={() => onPageChange(item.href)}
+            isActive={currentPage === item.href}
+            className="w-full justify-start text-sm font-normal"
+            tooltip={isCollapsed ? item.title : undefined}
+          >
+            <item.icon className="h-4 w-4 shrink-0" />
+            {!isCollapsed && (
+              <>
+                <span className="flex-1 text-sm font-normal">{item.title}</span>
+                <div className="ml-auto flex items-center space-x-1">
+                  {item.badge && (
+                    <Badge variant="secondary" className="text-xs font-medium">
+                      {item.badge}
+                    </Badge>
+                  )}
+                </div>
+              </>
+            )}
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      );
+    }
+
+    // For non-super admin users, check permissions
+    const hasBasicPermission = hasPermission(item.permission) || 
+      (item.href === 'users' && hasPermission('manage_basic_users')) ||
+      (item.href === 'unions' && hasPermission('manage_unions')) ||
+      (item.href === 'incident-claims' && hasPermission('manage_claims')) ||
+      (item.href === 'death-traps' && (hasPermission('view_death_traps') || hasPermission('create_death_trap_reports'))) ||
+      (item.href === 'stations' && hasPermission('manage_stations')) ||
+      (item.href === 'incidents' && hasPermission('manage_incidents')) ||
+      (item.href === 'accident-analysis' && (hasPermission('view_reports') || hasPermission('manage_incidents'))) ||
+      (item.href === 'tickets' && hasPermission('view_tickets')) ||
+      (item.href === 'ratings-complaints' && (hasPermission('view_reports') || hasPermission('view_ratings_complaints')));
+
+    if (!hasBasicPermission) {
+      return null;
+    }
+
+    // Check if this is a restricted item for the current user
+    const isRestricted = item.restrictedAccess && 
+      ((item.href === 'users' && !hasPermission('manage_users')) ||
+       (item.href === 'unions' && !hasPermission('manage_unions')) ||
+       (item.href === 'incident-claims' && !hasPermission('manage_claims')) ||
+       (item.href === 'death-traps' && !hasPermission('view_death_traps') && !hasPermission('create_death_trap_reports')));
+
+    return (
+      <SidebarMenuItem key={item.href}>
+        <SidebarMenuButton 
+          onClick={() => onPageChange(item.href)}
+          isActive={currentPage === item.href}
+          className={`w-full justify-start text-sm font-normal ${isRestricted ? 'opacity-75' : ''}`}
+          tooltip={isCollapsed ? item.title : undefined}
+        >
+          <item.icon className="h-4 w-4 shrink-0" />
+          {!isCollapsed && (
+            <>
+              <span className="flex-1 text-sm font-normal">{item.title}</span>
+              <div className="ml-auto flex items-center space-x-1">
+                {item.badge && (
+                  <Badge variant="secondary" className="text-xs font-medium">
+                    {item.badge}
+                  </Badge>
+                )}
+                {isRestricted && (
+                  <Badge variant="outline" className="text-xs font-medium bg-orange-50 text-orange-600 border-orange-200">
+                    Limited
+                  </Badge>
+                )}
+              </div>
+            </>
+          )}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
   };
 
-  // For mobile, always show expanded content
-  const isExpanded = isMobile || state === "expanded";
+  const renderMenuSection = (title: string, items: any[]) => {
+    // Super Admin sees all items regardless of permissions
+    const visibleItems = isSuperAdmin() ? 
+      items : 
+      items.filter(item => {
+        return hasPermission(item.permission) || 
+          (item.href === 'users' && hasPermission('manage_basic_users')) ||
+          (item.href === 'unions' && hasPermission('manage_unions')) ||
+          (item.href === 'incident-claims' && hasPermission('manage_claims')) ||
+          (item.href === 'death-traps' && (hasPermission('view_death_traps') || hasPermission('create_death_trap_reports'))) ||
+          (item.href === 'stations' && hasPermission('manage_stations')) ||
+          (item.href === 'incidents' && hasPermission('manage_incidents')) ||
+          (item.href === 'accident-analysis' && (hasPermission('view_reports') || hasPermission('manage_incidents'))) ||
+          (item.href === 'tickets' && hasPermission('view_tickets')) ||
+          (item.href === 'ratings-complaints' && (hasPermission('view_reports') || hasPermission('view_ratings_complaints')));
+      });
+    
+    if (visibleItems.length === 0) {
+      return null;
+    }
+
+    return (
+      <div key={title}>
+        {!isCollapsed && (
+          <div className="px-3 py-2">
+            <h2 className="mb-2 px-4 font-medium tracking-wide text-muted-foreground uppercase" style={{ fontSize: '10px' }}>
+              {title}
+            </h2>
+          </div>
+        )}
+        <div className="px-3">
+          <SidebarMenu>
+            {visibleItems.map(renderMenuItem)}
+          </SidebarMenu>
+        </div>
+        {!isCollapsed && <Separator className="my-2" />}
+      </div>
+    );
+  };
 
   return (
-    <Sidebar variant={isMobile ? "floating" : "inset"} collapsible={isMobile ? "none" : "icon"} className="border-r">
-      <SidebarHeader className="border-b">
-        <div className="flex items-center px-2 py-2">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
-            <span className="text-primary-foreground font-bold text-sm">R</span>
+    <Sidebar className="border-r" collapsible="icon">
+      <SidebarHeader className={`border-b ${isCollapsed ? 'px-2 py-4' : 'px-6 py-4'}`}>
+        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-2'}`}>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shrink-0">
+            <MapPin className="h-4 w-4" />
           </div>
-          {isExpanded && (
-            <div className="ml-2 flex-1 min-w-0">
-              <h1 className="font-semibold text-lg truncate">RISE</h1>
-              <p className="text-xs text-muted-foreground truncate">
-                Road Incidents Support
-              </p>
-            </div>
-          )}
-          {!isMobile && (
-            <div className="ml-auto">
-              {state === "expanded" ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setOpen(false)}
-                  className="h-6 w-6 p-0"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setOpen(true)}
-                  className="h-6 w-6 p-0"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              )}
+          {!isCollapsed && (
+            <div className="flex flex-col">
+              <span className="text-base font-semibold">RISE</span>
+              <span className="text-xs text-muted-foreground font-normal">
+                Transport Management
+              </span>
             </div>
           )}
         </div>
+        
+        {/* User Info - Only show when not collapsed */}
+        {!isCollapsed && user && (
+          <div className="mt-4 p-3 bg-muted rounded-lg">
+            <div className="text-sm font-medium">{user?.fullName}</div>
+            <div className="text-xs text-muted-foreground font-normal capitalize">
+              {user?.role?.replace('_', ' ')}
+            </div>
+            {user?.stationName && (
+              <div className="text-xs text-muted-foreground font-normal">
+                📍 {user.stationName}
+              </div>
+            )}
+            {user?.region && (
+              <div className="text-xs text-muted-foreground font-normal">
+                🏛️ {user.region} {user.district && `- ${user.district}`}
+              </div>
+            )}
+          </div>
+        )}
       </SidebarHeader>
 
-      <SidebarContent className="px-2">
-        {navigationItems.map((section) => (
-          <SidebarGroup key={section.title}>
-            <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-2 py-2">
-              {isExpanded ? section.title : "•••"}
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {section.items
-                  .filter(item => hasAccess(item.roles))
-                  .map((item) => (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        onClick={() => onPageChange(item.key)}
-                        isActive={currentPage === item.key}
-                        className="w-full justify-start px-2 py-2 h-10"
-                        tooltip={!isExpanded ? item.title : undefined}
-                      >
-                        <item.icon className="h-4 w-4 flex-shrink-0" />
-                        {isExpanded && (
-                          <>
-                            <span className="flex-1 truncate">{item.title}</span>
-                            {getBadgeForItem(item.key)}
-                          </>
-                        )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
-      </SidebarContent>
+      <SidebarContent className="px-0 py-4">
+        {/* Core Operations */}
+        {renderMenuSection('Core Operations', menuItems)}
 
-      <SidebarFooter className="border-t">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={() => onPageChange('settings')}
-              isActive={currentPage === 'settings'}
-              className="w-full justify-start px-2 py-2 h-12"
-              tooltip={!isExpanded ? "Settings" : undefined}
-            >
-              <Settings className="h-4 w-4 flex-shrink-0" />
-              {isExpanded && (
-                <span className="flex-1 truncate">Settings</span>
-              )}
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <div className="px-2 py-2">
-              {isExpanded ? (
-                <div className="flex items-center space-x-3">
-                  <Avatar className="w-8 h-8 flex-shrink-0">
-                    <AvatarFallback className="bg-muted text-xs">
-                      {user?.name ? getUserInitials(user.name) : 'U'}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{user?.name}</p>
-                    <div className="flex items-center space-x-1">
-                      {user?.role === 'admin' ? (
-                        <Crown className="h-3 w-3 text-purple-500 flex-shrink-0" />
-                      ) : (
-                        <Building className="h-3 w-3 text-blue-500 flex-shrink-0" />
-                      )}
-                      <span className="text-xs text-muted-foreground capitalize truncate">
-                        {user?.role}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-center">
-                  <Avatar className="w-8 h-8">
-                    <AvatarFallback className="bg-muted text-xs">
-                      {user?.name ? getUserInitials(user.name) : 'U'}
-                    </AvatarFallback>
-                  </Avatar>
-                </div>
-              )}
+        {/* Incident & Safety Management */}
+        {renderMenuSection('Safety & Incidents', incidentMenuItems)}
+
+        {/* Reports & Analytics */}
+        {renderMenuSection('Reports & Analytics', reportMenuItems)}
+
+        {/* Administration */}
+        {renderMenuSection('Administration', adminMenuItems)}
+
+        {/* Quick Actions for Station Workers */}
+        {user?.role === 'station_worker' && (
+          <div>
+            {!isCollapsed && (
+              <div className="px-3 py-2">
+                <h2 className="mb-2 px-4 font-medium tracking-wide text-muted-foreground uppercase" style={{ fontSize: '10px' }}>
+                  Quick Actions
+                </h2>
+              </div>
+            )}
+            <div className="px-3">
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton 
+                    onClick={() => onPageChange('new-trip')}
+                    className="w-full justify-start text-sm font-normal text-green-600"
+                    tooltip={isCollapsed ? "New Trip" : undefined}
+                  >
+                    <Plus className="h-4 w-4 shrink-0" />
+                    {!isCollapsed && <span className="text-sm font-normal">New Trip</span>}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton 
+                    onClick={() => onPageChange('new-passenger')}
+                    className="w-full justify-start text-sm font-normal text-blue-600"
+                    tooltip={isCollapsed ? "Add Passenger" : undefined}
+                  >
+                    <Plus className="h-4 w-4 shrink-0" />
+                    {!isCollapsed && <span className="text-sm font-normal">Add Passenger</span>}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
             </div>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
+            {!isCollapsed && <Separator className="my-2" />}
+          </div>
+        )}
+
+        {/* Role-based Information - Only show when not collapsed */}
+        {!isCollapsed && user && (
+          <div className="px-3 py-2 mt-4">
+            <div className="px-4 py-3 bg-muted rounded-lg">
+              <div className="font-medium tracking-wide text-muted-foreground uppercase mb-2" style={{ fontSize: '10px' }}>Access Level</div>
+              <div className="text-xs space-y-1">
+                {user?.role === 'super_admin' && (
+                  <div className="text-red-600">🔓 Full System Access</div>
+                )}
+                {user?.role === 'admin' && (
+                  <div className="text-orange-600">🔐 Administrative Access</div>
+                )}
+                {user?.role === 'regional_manager' && (
+                  <div className="text-blue-600">🏛️ Regional Management</div>
+                )}
+                {user?.role === 'district_manager' && (
+                  <div className="text-green-600">🏢 District Management</div>
+                )}
+                {user?.role === 'admin_operation' && (
+                  <div className="text-purple-600">⚙️ Operations Management</div>
+                )}
+                {user?.role === 'admin_hrm' && (
+                  <div className="text-pink-600">👥 HR Management</div>
+                )}
+                {user?.role === 'district_incident_reporter' && (
+                  <div className="text-yellow-600">⚠️ Incident Reporting</div>
+                )}
+                {user?.role === 'station_worker' && (
+                  <div className="text-gray-600">🚌 Station Operations</div>
+                )}
+                
+                {/* Restriction notices - Only for regular admins, not super admins */}
+                {user?.role === 'admin' && !isSuperAdmin() && (
+                  <div className="text-xs text-orange-500 bg-orange-50 p-2 rounded mt-2">
+                    <div className="font-medium text-xs">Restrictions:</div>
+                    <ul className="text-xs font-normal mt-1 space-y-1">
+                      <li>• Limited user management</li>
+                      <li>• No union management</li>
+                      <li>• No claims processing</li>
+                      <li>• No safety reporting</li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </SidebarContent>
     </Sidebar>
   );
 }

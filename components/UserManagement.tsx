@@ -21,55 +21,87 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { mockUsers, mockStations, userRoles, statusOptions } from './constants/mockData';
-import { formatDate, generateId, getStatusInfo } from './utils/helpers';
+import { mockUsers, mockStations, userRoles } from './constants/mockData';
+import { formatDate, generateId, getStatusBadgeClass, getRoleBadgeClass } from './utils/helpers';
+import { toast } from 'sonner';
 
 export function UserManagement() {
-  const { user } = useAuth();
+  const { user, isSuperAdmin, hasPermission } = useAuth();
   const [users, setUsers] = useState(mockUsers);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [newUser, setNewUser] = useState({
-    name: '',
+    username: '',
     email: '',
-    phone: '',
-    role: 'worker',
+    fullName: '',
+    role: 'station_worker',
     stationId: '',
-    password: ''
+    region: '',
+    district: ''
   });
 
   const handleAddUser = () => {
+    if (!newUser.username || !newUser.email || !newUser.fullName) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
     const station = mockStations.find(s => s.id === newUser.stationId);
     const userToAdd = {
-      ...newUser,
       id: generateId('USR', users.length),
-      stationName: station?.name || null,
-      status: 'active',
-      joinDate: new Date().toISOString().split('T')[0],
-      lastLogin: null
+      username: newUser.username,
+      email: newUser.email,
+      fullName: newUser.fullName,
+      role: newUser.role,
+      stationId: newUser.stationId || undefined,
+      stationName: station?.name || undefined,
+      region: newUser.region || undefined,
+      district: newUser.district || undefined,
+      status: 'active' as const,
+      createdAt: new Date().toISOString(),
+      lastLogin: undefined,
+      permissions: [] // This would be determined by role in a real system
     };
+    
     setUsers([...users, userToAdd]);
-    setNewUser({ name: '', email: '', phone: '', role: 'worker', stationId: '', password: '' });
+    setNewUser({ 
+      username: '', 
+      email: '', 
+      fullName: '', 
+      role: 'station_worker', 
+      stationId: '', 
+      region: '', 
+      district: '' 
+    });
     setShowAddDialog(false);
+    toast.success('User created successfully');
   };
 
   const getRoleBadge = (role: string) => {
     const roleInfo = userRoles.find(r => r.value === role);
-    const IconComponent = role === 'admin' ? Crown : UserCheck;
+    const IconComponent = role.includes('admin') ? Crown : UserCheck;
     return (
-      <Badge className={roleInfo?.color || 'bg-gray-100 text-gray-800'}>
+      <Badge className={getRoleBadgeClass(role)}>
         <IconComponent className="h-3 w-3 mr-1" />
-        {roleInfo?.label || role}
+        {roleInfo?.label || role.replace('_', ' ')}
       </Badge>
     );
   };
 
   const getStatusBadge = (status: string) => {
-    const statusInfo = getStatusInfo(status, 'user');
+    const getStatusLabel = (status: string) => {
+      switch (status) {
+        case 'active': return 'Active';
+        case 'inactive': return 'Inactive';
+        case 'suspended': return 'Suspended';
+        default: return status.charAt(0).toUpperCase() + status.slice(1);
+      }
+    };
+
     return (
-      <Badge className={statusInfo?.color || 'bg-gray-100 text-gray-800'}>
-        {statusInfo?.label || status}
+      <Badge className={getStatusBadgeClass(status)}>
+        {getStatusLabel(status)}
       </Badge>
     );
   };
@@ -77,28 +109,47 @@ export function UserManagement() {
   const toggleUserStatus = (userId: string) => {
     setUsers(users.map(u => {
       if (u.id === userId) {
-        return { ...u, status: u.status === 'active' ? 'suspended' : 'active' };
+        const newStatus = u.status === 'active' ? 'suspended' : 'active';
+        toast.success(`User ${newStatus === 'active' ? 'activated' : 'suspended'} successfully`);
+        return { ...u, status: newStatus };
       }
       return u;
     }));
   };
 
-  if (user?.role !== 'admin') {
+  // Check access permissions - Super Admin always has access
+  const canManageUsers = isSuperAdmin() || hasPermission('manage_basic_users');
+  
+  if (!canManageUsers) {
     return (
       <div className="p-6 text-center">
         <Shield className="h-16 w-16 mx-auto mb-4 text-gray-400" />
         <h2 className="text-2xl font-bold text-gray-600 mb-2">Access Restricted</h2>
-        <p className="text-gray-500">Only administrators can access user management.</p>
+        <p className="text-gray-500">
+          You need appropriate permissions to manage users.
+        </p>
       </div>
     );
   }
+
+  // Filter users based on permissions
+  const filteredUsers = isSuperAdmin() ? 
+    users : 
+    users.filter(u => u.role !== 'super_admin'); // Regular admins can't see super admin accounts
+
+  const totalUsers = filteredUsers.length;
+  const adminUsers = filteredUsers.filter(u => u.role.includes('admin')).length;
+  const activeUsers = filteredUsers.filter(u => u.status === 'active').length;
+  const suspendedUsers = filteredUsers.filter(u => u.status === 'suspended').length;
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">User Management</h1>
-          <p className="text-gray-600">Manage user accounts and permissions across the RISE system</p>
+          <h1>User Management</h1>
+          <p className="text-muted-foreground">
+            Manage user accounts and permissions across the RISE system
+          </p>
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogTrigger asChild>
@@ -110,22 +161,33 @@ export function UserManagement() {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Add New User</DialogTitle>
-              <DialogDescription>Create a new user account for the RISE system.</DialogDescription>
+              <DialogDescription>
+                Create a new user account for the RISE system. Fill in the required information below.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label htmlFor="userName">Full Name</Label>
+                <Label htmlFor="username">Username *</Label>
                 <Input
-                  id="userName"
-                  value={newUser.name}
-                  onChange={(e) => setNewUser({...newUser, name: e.target.value})}
+                  id="username"
+                  value={newUser.username}
+                  onChange={(e) => setNewUser({...newUser, username: e.target.value})}
+                  placeholder="e.g., john.doe"
+                />
+              </div>
+              <div>
+                <Label htmlFor="fullName">Full Name *</Label>
+                <Input
+                  id="fullName"
+                  value={newUser.fullName}
+                  onChange={(e) => setNewUser({...newUser, fullName: e.target.value})}
                   placeholder="e.g., John Doe"
                 />
               </div>
               <div>
-                <Label htmlFor="userEmail">Email</Label>
+                <Label htmlFor="email">Email *</Label>
                 <Input
-                  id="userEmail"
+                  id="email"
                   type="email"
                   value={newUser.email}
                   onChange={(e) => setNewUser({...newUser, email: e.target.value})}
@@ -133,43 +195,67 @@ export function UserManagement() {
                 />
               </div>
               <div>
-                <Label htmlFor="userPhone">Phone Number</Label>
-                <Input
-                  id="userPhone"
-                  value={newUser.phone}
-                  onChange={(e) => setNewUser({...newUser, phone: e.target.value})}
-                  placeholder="+233 XX XXX XXXX"
-                />
-              </div>
-              <div>
-                <Label htmlFor="userRole">Role</Label>
+                <Label htmlFor="role">Role *</Label>
                 <Select value={newUser.role} onValueChange={(value) => setNewUser({...newUser, role: value})}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {userRoles.map((role) => (
-                      <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>
+                    {userRoles
+                      .filter(role => isSuperAdmin() || role.value !== 'super_admin') // Regular admins can't create super admin users
+                      .map((role) => (
+                      <SelectItem key={role.value} value={role.value}>
+                        <div>
+                          <div className="font-medium">{role.label}</div>
+                          <div className="text-sm text-muted-foreground">{role.description}</div>
+                        </div>
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              {newUser.role === 'worker' && (
+              {newUser.role === 'station_worker' && (
                 <div>
-                  <Label htmlFor="userStation">Station</Label>
+                  <Label htmlFor="station">Station</Label>
                   <Select value={newUser.stationId} onValueChange={(value) => setNewUser({...newUser, stationId: value})}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select station" />
                     </SelectTrigger>
                     <SelectContent>
                       {mockStations.map((station) => (
-                        <SelectItem key={station.id} value={station.id}>{station.name}</SelectItem>
+                        <SelectItem key={station.id} value={station.id}>
+                          {station.name} - {station.location}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
-              <Button onClick={handleAddUser} className="w-full">Create User</Button>
+              {(newUser.role.includes('manager') || newUser.role.includes('reporter')) && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="region">Region</Label>
+                    <Input
+                      id="region"
+                      value={newUser.region}
+                      onChange={(e) => setNewUser({...newUser, region: e.target.value})}
+                      placeholder="e.g., Greater Accra"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="district">District</Label>
+                    <Input
+                      id="district"
+                      value={newUser.district}
+                      onChange={(e) => setNewUser({...newUser, district: e.target.value})}
+                      placeholder="e.g., Accra"
+                    />
+                  </div>
+                </div>
+              )}
+              <Button onClick={handleAddUser} className="w-full">
+                Create User
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -180,29 +266,29 @@ export function UserManagement() {
         <Card>
           <CardContent className="p-6 text-center">
             <Users className="h-8 w-8 mx-auto mb-2 text-blue-600" />
-            <p className="text-2xl font-bold">{users.length}</p>
-            <p className="text-sm text-gray-600">Total Users</p>
+            <p className="text-2xl font-bold">{totalUsers}</p>
+            <p className="text-sm text-muted-foreground">Total Users</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6 text-center">
             <Crown className="h-8 w-8 mx-auto mb-2 text-purple-600" />
-            <p className="text-2xl font-bold">{users.filter(u => u.role === 'admin').length}</p>
-            <p className="text-sm text-gray-600">Administrators</p>
+            <p className="text-2xl font-bold">{adminUsers}</p>
+            <p className="text-sm text-muted-foreground">Administrators</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6 text-center">
             <UserCheck className="h-8 w-8 mx-auto mb-2 text-green-600" />
-            <p className="text-2xl font-bold">{users.filter(u => u.status === 'active').length}</p>
-            <p className="text-sm text-gray-600">Active Users</p>
+            <p className="text-2xl font-bold">{activeUsers}</p>
+            <p className="text-sm text-muted-foreground">Active Users</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6 text-center">
             <UserX className="h-8 w-8 mx-auto mb-2 text-red-600" />
-            <p className="text-2xl font-bold">{users.filter(u => u.status === 'suspended').length}</p>
-            <p className="text-sm text-gray-600">Suspended</p>
+            <p className="text-2xl font-bold">{suspendedUsers}</p>
+            <p className="text-sm text-muted-foreground">Suspended</p>
           </CardContent>
         </Card>
       </div>
@@ -219,30 +305,26 @@ export function UserManagement() {
                 <TableHead>User</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead>Station</TableHead>
+                <TableHead>Assignment</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Last Login</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((userItem) => (
+              {filteredUsers.map((userItem) => (
                 <TableRow key={userItem.id}>
                   <TableCell>
                     <div>
-                      <p className="font-medium">{userItem.name}</p>
-                      <p className="text-sm text-gray-500">{userItem.id}</p>
+                      <p className="font-medium">{userItem.fullName}</p>
+                      <p className="text-sm text-muted-foreground">{userItem.username}</p>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div>
+                    <div className="space-y-1">
                       <div className="flex items-center space-x-1 text-sm">
                         <Mail className="h-3 w-3" />
                         <span>{userItem.email}</span>
-                      </div>
-                      <div className="flex items-center space-x-1 text-sm">
-                        <Phone className="h-3 w-3" />
-                        <span>{userItem.phone}</span>
                       </div>
                     </div>
                   </TableCell>
@@ -253,8 +335,15 @@ export function UserManagement() {
                         <Building className="h-3 w-3" />
                         <span className="text-sm">{userItem.stationName}</span>
                       </div>
+                    ) : userItem.region ? (
+                      <div className="text-sm">
+                        <div>{userItem.region}</div>
+                        {userItem.district && (
+                          <div className="text-muted-foreground">{userItem.district}</div>
+                        )}
+                      </div>
                     ) : (
-                      <span className="text-gray-400">N/A</span>
+                      <span className="text-muted-foreground">N/A</span>
                     )}
                   </TableCell>
                   <TableCell>{getStatusBadge(userItem.status)}</TableCell>
@@ -262,7 +351,7 @@ export function UserManagement() {
                     {userItem.lastLogin ? (
                       <span className="text-sm">{formatDate(userItem.lastLogin)}</span>
                     ) : (
-                      <span className="text-gray-400 text-sm">Never</span>
+                      <span className="text-muted-foreground text-sm">Never</span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -277,13 +366,14 @@ export function UserManagement() {
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" disabled={!isSuperAdmin() && userItem.role.includes('admin')}>
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button 
                         variant={userItem.status === 'active' ? 'destructive' : 'default'}
                         size="sm"
                         onClick={() => toggleUserStatus(userItem.id)}
+                        disabled={!isSuperAdmin() && userItem.role.includes('admin')}
                       >
                         {userItem.status === 'active' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                       </Button>
@@ -301,53 +391,61 @@ export function UserManagement() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>User Details</DialogTitle>
-            <DialogDescription>Complete information for {selectedUser?.name}</DialogDescription>
+            <DialogDescription>
+              Complete information for {selectedUser?.fullName || 'the selected user'}
+            </DialogDescription>
           </DialogHeader>
           {selectedUser && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="font-medium text-gray-700">Full Name</p>
-                  <p>{selectedUser.name}</p>
+                  <p className="font-medium text-muted-foreground">Full Name</p>
+                  <p>{selectedUser.fullName}</p>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-700">User ID</p>
+                  <p className="font-medium text-muted-foreground">Username</p>
+                  <p>{selectedUser.username}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="font-medium text-muted-foreground">Email</p>
+                  <p>{selectedUser.email}</p>
+                </div>
+                <div>
+                  <p className="font-medium text-muted-foreground">User ID</p>
                   <p>{selectedUser.id}</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="font-medium text-gray-700">Email</p>
-                  <p>{selectedUser.email}</p>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-700">Phone</p>
-                  <p>{selectedUser.phone}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="font-medium text-gray-700">Role</p>
+                  <p className="font-medium text-muted-foreground">Role</p>
                   {getRoleBadge(selectedUser.role)}
                 </div>
                 <div>
-                  <p className="font-medium text-gray-700">Status</p>
+                  <p className="font-medium text-muted-foreground">Status</p>
                   {getStatusBadge(selectedUser.status)}
                 </div>
               </div>
               {selectedUser.stationName && (
                 <div className="text-sm">
-                  <p className="font-medium text-gray-700">Assigned Station</p>
+                  <p className="font-medium text-muted-foreground">Assigned Station</p>
                   <p>{selectedUser.stationName}</p>
+                </div>
+              )}
+              {selectedUser.region && (
+                <div className="text-sm">
+                  <p className="font-medium text-muted-foreground">Region/District</p>
+                  <p>{selectedUser.region}{selectedUser.district && ` - ${selectedUser.district}`}</p>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="font-medium text-gray-700">Join Date</p>
-                  <p>{formatDate(selectedUser.joinDate)}</p>
+                  <p className="font-medium text-muted-foreground">Created</p>
+                  <p>{formatDate(selectedUser.createdAt)}</p>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-700">Last Login</p>
+                  <p className="font-medium text-muted-foreground">Last Login</p>
                   <p>{selectedUser.lastLogin ? formatDate(selectedUser.lastLogin) : 'Never'}</p>
                 </div>
               </div>

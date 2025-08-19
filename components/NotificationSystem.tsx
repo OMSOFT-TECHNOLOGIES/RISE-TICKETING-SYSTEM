@@ -78,25 +78,31 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   };
 
   const showToast = (type: 'success' | 'error' | 'info' | 'warning', message: string, description?: string) => {
-    const toastConfig = {
-      description,
-      duration: type === 'error' ? 6000 : 4000,
-    };
+    try {
+      const toastConfig = {
+        description,
+        duration: type === 'error' ? 6000 : 4000,
+      };
 
-    switch (type) {
-      case 'success':
-        toast.success(message, toastConfig);
-        break;
-      case 'error':
-        toast.error(message, toastConfig);
-        break;
-      case 'warning':
-        toast.warning(message, toastConfig);
-        break;
-      case 'info':
-      default:
-        toast.info(message, toastConfig);
-        break;
+      switch (type) {
+        case 'success':
+          toast.success(message, toastConfig);
+          break;
+        case 'error':
+          toast.error(message, toastConfig);
+          break;
+        case 'warning':
+          toast.warning(message, toastConfig);
+          break;
+        case 'info':
+        default:
+          toast.info(message, toastConfig);
+          break;
+      }
+    } catch (error) {
+      console.warn('Toast notification failed:', error);
+      // Fallback to simple alert if toast fails
+      alert(`${type.toUpperCase()}: ${message}`);
     }
   };
 

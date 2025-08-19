@@ -182,7 +182,7 @@ export function PassengerTickets() {
     priority: 'medium'
   });
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   
   // Filter tickets based on user role
   const userTickets = isAdmin 

@@ -159,7 +159,7 @@ export function StationManagement() {
     operatingHours: ''
   });
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   
   // Filter stations based on user role
   const userStations = isAdmin 

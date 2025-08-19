@@ -3,6 +3,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { useAuth } from './AuthContext';
+import { useTheme } from './ThemeProvider';
 import { QuickActionDialog } from './QuickActionDialog';
 import { SearchDialog } from './SearchDialog';
 import { UserProfileDialog } from './UserProfileDialog';
@@ -28,7 +29,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { Avatar, AvatarFallback } from './ui/avatar';
-import { SidebarTrigger } from './ui/sidebar';
+import { SidebarTrigger, useSidebar } from './ui/sidebar';
 import { toast } from 'sonner';
 
 interface HeaderProps {
@@ -38,8 +39,9 @@ interface HeaderProps {
 
 export function Header({ onMenuToggle, onSettingsOpen }: HeaderProps) {
   const { user, logout } = useAuth();
+  const { theme, setTheme, actualTheme } = useTheme();
+  const { isMobile, setOpenMobile } = useSidebar();
   const [searchQuery, setSearchQuery] = useState('');
-  const [isDarkMode, setIsDarkMode] = useState(false);
   
   // Dialog states
   const [showQuickAction, setShowQuickAction] = useState(false);
@@ -85,37 +87,22 @@ export function Header({ onMenuToggle, onSettingsOpen }: HeaderProps) {
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  // Initialize theme from localStorage
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('rise-theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-    
-    setIsDarkMode(shouldBeDark);
-    if (shouldBeDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, []);
-
   const getUserInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
   const toggleTheme = () => {
-    const newTheme = !isDarkMode;
-    setIsDarkMode(newTheme);
+    // Cycle through light -> dark -> system
+    const nextTheme = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light';
+    setTheme(nextTheme);
     
-    if (newTheme) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('rise-theme', 'dark');
-      toast.success('Dark mode enabled');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('rise-theme', 'light');
-      toast.success('Light mode enabled');
-    }
+    const messages = {
+      light: 'Light mode enabled',
+      dark: 'Dark mode enabled', 
+      system: 'System theme enabled'
+    };
+    
+    toast.success(messages[nextTheme]);
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -131,6 +118,12 @@ export function Header({ onMenuToggle, onSettingsOpen }: HeaderProps) {
 
   const handleQuickAction = () => {
     setShowQuickAction(true);
+  };
+
+  const handleMobileMenuToggle = () => {
+    if (isMobile) {
+      setOpenMobile(true);
+    }
   };
 
   const markNotificationAsRead = (id: number) => {
@@ -171,7 +164,7 @@ export function Header({ onMenuToggle, onSettingsOpen }: HeaderProps) {
                 variant="ghost"
                 size="sm"
                 className="md:hidden h-8 w-8 p-0"
-                onClick={onMenuToggle}
+                onClick={handleMobileMenuToggle}
               >
                 <Menu className="h-4 w-4" />
                 <span className="sr-only">Toggle mobile menu</span>
@@ -219,9 +212,9 @@ export function Header({ onMenuToggle, onSettingsOpen }: HeaderProps) {
                 size="sm"
                 onClick={toggleTheme}
                 className="h-8 w-8 p-0 hidden sm:flex"
-                title={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
+                title={`Current: ${theme} (${actualTheme}). Click to cycle through themes`}
               >
-                {isDarkMode ? (
+                {actualTheme === 'dark' ? (
                   <Sun className="h-4 w-4" />
                 ) : (
                   <Moon className="h-4 w-4" />

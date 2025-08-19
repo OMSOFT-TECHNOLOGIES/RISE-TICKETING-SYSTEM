@@ -14,7 +14,9 @@ import {
   Calendar,
   CheckCircle,
   AlertCircle,
-  Eye
+  Eye,
+  Phone,
+  Shield
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
@@ -39,8 +41,26 @@ const mockTrips = [
     status: 'scheduled',
     stationId: 'STA001',
     passengers: [
-      { name: 'John Doe', phone: '+233 24 111 1111', ticketId: 'TKT001' },
-      { name: 'Jane Smith', phone: '+233 26 222 2222', ticketId: 'TKT002' }
+      { 
+        name: 'John Doe', 
+        phone: '+233 24 111 1111', 
+        ticketId: 'TKT001',
+        emergencyContact: {
+          name: 'Mary Doe',
+          phone: '+233 20 123 4567',
+          relationship: 'spouse'
+        }
+      },
+      { 
+        name: 'Jane Smith', 
+        phone: '+233 26 222 2222', 
+        ticketId: 'TKT002',
+        emergencyContact: {
+          name: 'Robert Smith',
+          phone: '+233 24 987 6543',
+          relationship: 'parent'
+        }
+      }
     ]
   },
   {
@@ -111,10 +131,13 @@ export function TripBooking() {
     passengerPhone: '',
     passengerEmail: '',
     seats: 1,
-    notes: ''
+    notes: '',
+    emergencyContactName: '',
+    emergencyContactPhone: '',
+    emergencyContactRelationship: ''
   });
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const userTrips = isAdmin ? trips : trips.filter(t => t.stationId === user?.stationId);
 
   const handleScheduleTrip = () => {
@@ -145,6 +168,13 @@ export function TripBooking() {
   };
 
   const handleBookPassenger = () => {
+    // Validate required fields
+    if (!passengerBooking.passengerName || !passengerBooking.passengerPhone || 
+        !passengerBooking.emergencyContactName || !passengerBooking.emergencyContactPhone || 
+        !passengerBooking.emergencyContactRelationship) {
+      alert('Please fill in all required fields including emergency contact information.');
+      return;
+    }
     const updatedTrips = trips.map(trip => {
       if (trip.id === passengerBooking.tripId) {
         const newPassenger = {
@@ -152,7 +182,12 @@ export function TripBooking() {
           phone: passengerBooking.passengerPhone,
           email: passengerBooking.passengerEmail,
           seats: passengerBooking.seats,
-          ticketId: `TKT${Date.now()}`
+          ticketId: `TKT${Date.now()}`,
+          emergencyContact: {
+            name: passengerBooking.emergencyContactName,
+            phone: passengerBooking.emergencyContactPhone,
+            relationship: passengerBooking.emergencyContactRelationship
+          }
         };
         return {
           ...trip,
@@ -171,7 +206,10 @@ export function TripBooking() {
       passengerPhone: '',
       passengerEmail: '',
       seats: 1,
-      notes: ''
+      notes: '',
+      emergencyContactName: '',
+      emergencyContactPhone: '',
+      emergencyContactRelationship: ''
     });
   };
 
@@ -426,21 +464,23 @@ export function TripBooking() {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="passengerName">Passenger Name</Label>
+                <Label htmlFor="passengerName">Passenger Name <span className="text-red-500">*</span></Label>
                 <Input
                   id="passengerName"
                   value={passengerBooking.passengerName}
                   onChange={(e) => setPassengerBooking({...passengerBooking, passengerName: e.target.value})}
                   placeholder="Full name"
+                  required
                 />
               </div>
               <div>
-                <Label htmlFor="passengerPhone">Phone Number</Label>
+                <Label htmlFor="passengerPhone">Phone Number <span className="text-red-500">*</span></Label>
                 <Input
                   id="passengerPhone"
                   value={passengerBooking.passengerPhone}
                   onChange={(e) => setPassengerBooking({...passengerBooking, passengerPhone: e.target.value})}
                   placeholder="+233 XX XXX XXXX"
+                  required
                 />
               </div>
               <div>
@@ -464,6 +504,59 @@ export function TripBooking() {
                   onChange={(e) => setPassengerBooking({...passengerBooking, seats: parseInt(e.target.value)})}
                 />
               </div>
+              
+              {/* Emergency Contact Section */}
+              <div className="md:col-span-2 border-t pt-4 mt-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <Shield className="h-4 w-4 text-red-600" />
+                  <h3 className="font-medium text-red-600">Emergency Contact Information</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="emergencyContactName">Emergency Contact Name <span className="text-red-500">*</span></Label>
+                    <Input
+                      id="emergencyContactName"
+                      value={passengerBooking.emergencyContactName}
+                      onChange={(e) => setPassengerBooking({...passengerBooking, emergencyContactName: e.target.value})}
+                      placeholder="Full name of emergency contact"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="emergencyContactPhone">Emergency Contact Phone <span className="text-red-500">*</span></Label>
+                    <Input
+                      id="emergencyContactPhone"
+                      value={passengerBooking.emergencyContactPhone}
+                      onChange={(e) => setPassengerBooking({...passengerBooking, emergencyContactPhone: e.target.value})}
+                      placeholder="+233 XX XXX XXXX"
+                      required
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label htmlFor="emergencyContactRelationship">Relationship to Passenger <span className="text-red-500">*</span></Label>
+                    <Select 
+                      value={passengerBooking.emergencyContactRelationship} 
+                      onValueChange={(value) => setPassengerBooking({...passengerBooking, emergencyContactRelationship: value})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select relationship" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="parent">Parent</SelectItem>
+                        <SelectItem value="spouse">Spouse</SelectItem>
+                        <SelectItem value="child">Child</SelectItem>
+                        <SelectItem value="sibling">Sibling</SelectItem>
+                        <SelectItem value="friend">Friend</SelectItem>
+                        <SelectItem value="guardian">Guardian</SelectItem>
+                        <SelectItem value="relative">Other Relative</SelectItem>
+                        <SelectItem value="colleague">Colleague</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
               <div className="md:col-span-2">
                 <Label htmlFor="notes">Notes (Optional)</Label>
                 <Textarea
@@ -479,7 +572,17 @@ export function TripBooking() {
                 </Button>
                 <Button 
                   variant="outline" 
-                  onClick={() => setPassengerBooking({...passengerBooking, tripId: ''})}
+                  onClick={() => setPassengerBooking({
+                    tripId: '',
+                    passengerName: '',
+                    passengerPhone: '',
+                    passengerEmail: '',
+                    seats: 1,
+                    notes: '',
+                    emergencyContactName: '',
+                    emergencyContactPhone: '',
+                    emergencyContactRelationship: ''
+                  })}
                 >
                   Cancel
                 </Button>
@@ -577,7 +680,7 @@ export function TripBooking() {
 
       {/* Passengers Dialog */}
       <Dialog open={showPassengersDialog} onOpenChange={setShowPassengersDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Trip Passengers</DialogTitle>
             <DialogDescription>
@@ -592,21 +695,40 @@ export function TripBooking() {
                 <p>Passengers: {selectedTrip.booked}/{selectedTrip.capacity}</p>
               </div>
               {selectedTrip.passengers.length > 0 ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {selectedTrip.passengers.map((passenger: any, index: number) => (
-                    <div key={index} className="p-3 bg-gray-50 rounded border">
-                      <div className="flex justify-between items-start">
+                    <div key={index} className="p-4 bg-gray-50 rounded border">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
+                          <h4 className="font-medium text-gray-900 mb-2">Passenger Information</h4>
                           <p className="font-medium">{passenger.name}</p>
-                          <p className="text-sm text-gray-600">{passenger.phone}</p>
+                          <div className="flex items-center gap-1 text-sm text-gray-600">
+                            <Phone className="h-3 w-3" />
+                            {passenger.phone}
+                          </div>
                           {passenger.email && (
                             <p className="text-sm text-gray-600">{passenger.email}</p>
                           )}
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium">Ticket: {passenger.ticketId}</p>
+                          <p className="text-sm font-medium mt-1">Ticket: {passenger.ticketId}</p>
                           {passenger.seats && <p className="text-sm text-gray-600">{passenger.seats} seat(s)</p>}
                         </div>
+                        
+                        {passenger.emergencyContact && (
+                          <div>
+                            <div className="flex items-center gap-1 mb-2">
+                              <Shield className="h-3 w-3 text-red-600" />
+                              <h4 className="font-medium text-gray-900">Emergency Contact</h4>
+                            </div>
+                            <p className="font-medium">{passenger.emergencyContact.name}</p>
+                            <div className="flex items-center gap-1 text-sm text-gray-600">
+                              <Phone className="h-3 w-3" />
+                              {passenger.emergencyContact.phone}
+                            </div>
+                            <p className="text-sm text-gray-600 capitalize">
+                              Relationship: {passenger.emergencyContact.relationship}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
