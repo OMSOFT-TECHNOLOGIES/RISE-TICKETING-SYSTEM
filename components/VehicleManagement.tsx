@@ -88,7 +88,7 @@ export function VehicleManagement() {
     mileage: ''
   });
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const userVehicles = isAdmin ? vehicles : vehicles.filter(v => v.stationId === user?.stationId);
 
   const handleAddVehicle = () => {

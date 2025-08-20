@@ -18,6 +18,7 @@ export const pagePermissions: Record<string, string> = {
   reports: 'view_reports',
   users: 'manage_basic_users',
   revenue: 'view_revenue',
+  accounts: 'view_revenue',
   tickets: 'view_tickets',
   'ratings-complaints': 'view_reports',
   'accident-analysis': 'view_reports',
@@ -30,21 +31,28 @@ export const pagePermissions: Record<string, string> = {
 
 // Custom access checks for complex permission logic
 export const customAccessChecks = {
-  'ratings-complaints': (hasPermission: (perm: string) => boolean) => 
+  'ratings-complaints': (hasPermission: (perm: string) => boolean, userRole?: string) => 
     hasPermission('view_reports') || hasPermission('view_ratings_complaints'),
   
-  'accident-analysis': (hasPermission: (perm: string) => boolean) => 
-    hasPermission('view_reports') || hasPermission('manage_incidents'),
+  'accident-analysis': (hasPermission: (perm: string) => boolean, userRole?: string) => 
+    hasPermission('view_reports') || hasPermission('manage_incidents') || userRole === 'district_incident_reporter',
   
-  'death-traps': (hasPermission: (perm: string) => boolean) => 
-    hasPermission('view_death_traps') || hasPermission('create_death_trap_reports')
+  'death-traps': (hasPermission: (perm: string) => boolean, userRole?: string) => 
+    hasPermission('view_death_traps') || hasPermission('create_death_trap_reports') || userRole === 'district_incident_reporter',
+    
+  'incidents': (hasPermission: (perm: string) => boolean, userRole?: string) =>
+    hasPermission('manage_incidents') || userRole === 'district_incident_reporter',
+    
+  'incident-claims': (hasPermission: (perm: string) => boolean, userRole?: string) =>
+    hasPermission('manage_claims') || userRole === 'district_incident_reporter'
 };
 
 // Check if user has access to a specific page
 export function checkPageAccess(
   page: string, 
   hasPermission: (permission: string) => boolean,
-  isSuperAdmin: () => boolean
+  isSuperAdmin: () => boolean,
+  userRole?: string
 ): boolean {
   // Super Admin has access to everything
   if (isSuperAdmin()) {
@@ -53,7 +61,7 @@ export function checkPageAccess(
 
   // Check for custom access logic first
   if (customAccessChecks[page as keyof typeof customAccessChecks]) {
-    return customAccessChecks[page as keyof typeof customAccessChecks](hasPermission);
+    return customAccessChecks[page as keyof typeof customAccessChecks](hasPermission, userRole);
   }
 
   // Check standard permission mapping
@@ -75,14 +83,29 @@ export function getRestrictionMessage(page: string): RestrictionMessage {
       suggestion: "This feature is restricted to strategic-level operations."
     },
     'incident-claims': {
-      title: "Claims Management Restricted",
-      message: "Incident claims management requires specialized permissions.",
+      title: "Claims Management Access",
+      message: "Incident claims management requires specialized permissions for injury compensation processing.",
       suggestion: "Contact an administrator or incident reporter for claims processing."
     },
     'death-traps': {
-      title: "Safety Reporting Restricted",
+      title: "Safety Reporting Access",
       message: "Death trap reporting requires specialized safety management permissions.",
-      suggestion: "Contact your regional manager or incident reporter for safety concerns."
+      suggestion: "Contact your incident coordinator or safety administrator for access."
+    },
+    accounts: {
+      title: "Account Management Restricted",
+      message: "Financial account management requires administrative or financial management permissions.",
+      suggestion: "Contact your system administrator or financial manager for account access."
+    },
+    incidents: {
+      title: "Incident Management Access",
+      message: "Incident management requires specialized safety or administrative permissions.",
+      suggestion: "Contact your system administrator or incident coordinator for access."
+    },
+    'accident-analysis': {
+      title: "Analysis Reports Access",
+      message: "Accident analysis requires reporting or incident management permissions.",
+      suggestion: "Contact your administrator or incident coordinator for analysis access."
     }
   };
 

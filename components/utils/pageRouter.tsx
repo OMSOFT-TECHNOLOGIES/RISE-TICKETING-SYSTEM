@@ -9,9 +9,11 @@ import { PassengerTickets } from '../PassengerTickets';
 import { PassengerManagement } from '../PassengerManagement';
 import { UserManagement } from '../UserManagement';
 import { Revenue } from '../Revenue';
+import { AccountManagement } from '../AccountManagement';
 import { Reports } from '../Reports';
 import { RatingsComplaints } from '../RatingsComplaints';
 import { AccidentAnalysis } from '../AccidentAnalysis';
+import { IncidentManagement } from '../IncidentManagement';
 import { IncidentClaims } from '../IncidentClaims';
 import { DeathTrapReporting } from '../DeathTrapReporting';
 import { Settings } from '../Settings';
@@ -23,13 +25,15 @@ interface PageRouterProps {
   showSettings: boolean;
   hasPermission: (permission: string) => boolean;
   isSuperAdmin: () => boolean;
+  userRole?: string;
 }
 
 export function renderPage({ 
   currentPage, 
   showSettings, 
   hasPermission, 
-  isSuperAdmin 
+  isSuperAdmin,
+  userRole
 }: PageRouterProps): React.ReactElement {
   
   // Settings page takes precedence
@@ -43,7 +47,7 @@ export function renderPage({
   }
 
   // Check access for non-super admin users
-  if (!checkPageAccess(currentPage, hasPermission, isSuperAdmin)) {
+  if (!checkPageAccess(currentPage, hasPermission, isSuperAdmin, userRole)) {
     const restrictionInfo = getRestrictionMessage(currentPage);
     return <AccessRestricted {...restrictionInfo} />;
   }
@@ -75,6 +79,8 @@ function renderPageComponent(page: string): React.ReactElement {
       return <UserManagement />;
     case 'revenue':
       return <Revenue />;
+    case 'accounts':
+      return <AccountManagement />;
     case 'tickets':
       return <PassengerTickets />;
     case 'ratings-complaints':
@@ -82,7 +88,7 @@ function renderPageComponent(page: string): React.ReactElement {
     case 'accident-analysis':
       return <AccidentAnalysis />;
     case 'incidents':
-      return <AccidentAnalysis />;
+      return <IncidentManagement />;
     case 'incident-claims':
       return <IncidentClaims />;
     case 'death-traps':

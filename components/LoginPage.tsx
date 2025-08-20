@@ -166,11 +166,14 @@ export function LoginPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleDemoLogin('worker')}
+                onClick={() => handleDemoLogin('incident_reporter')}
                 className="text-xs"
               >
-                Login as Worker
+                Incident Reporter
               </Button>
+            </div>
+            <div className="text-xs text-green-700 mt-2 p-2 bg-green-100 rounded">
+              <strong>✅ Test Access:</strong> Incident Reporter has full access to all Safety & Incidents pages including Accident Analysis.
             </div>
           </CardContent>
         </Card>

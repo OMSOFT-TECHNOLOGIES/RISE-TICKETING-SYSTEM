@@ -105,7 +105,7 @@ export function DriverManagement() {
     emergencyContact: ''
   });
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const userDrivers = isAdmin ? drivers : drivers.filter(d => d.stationId === user?.stationId);
 
   const handleAddDriver = () => {

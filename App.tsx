@@ -69,8 +69,8 @@ function AppContent() {
                       {accessInfo.label}
                     </span>
                   </div>
-                  {/* Only show limited access warning for non-admin roles */}
-                  {!isSuperAdmin() && !isAdmin() && (
+                  {/* Only show limited access warning for non-admin roles, but not for incident reporters on safety pages */}
+                  {!isSuperAdmin() && !isAdmin() && !(user?.role === 'district_incident_reporter' && ['incidents', 'incident-claims', 'death-traps', 'accident-analysis'].includes(currentPage)) && (
                     <div className="flex items-center space-x-1 text-muted-foreground">
                       <AlertTriangle className="h-3 w-3" />
                       <span className="text-xs">Limited Access</span>
@@ -87,7 +87,8 @@ function AppContent() {
                   currentPage,
                   showSettings,
                   hasPermission,
-                  isSuperAdmin
+                  isSuperAdmin,
+                  userRole: user?.role
                 })}
               </div>
             </main>

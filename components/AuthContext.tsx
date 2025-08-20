@@ -36,8 +36,28 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const rolePermissions: Record<UserRole, string[]> = {
-  // Super Admin - Full system access
-  super_admin: ['*'], // All permissions
+  // Super Admin - Full system access - explicitly includes ALL permissions
+  super_admin: [
+    '*', // Wildcard for all permissions
+    'manage_users', // Explicit full user management
+    'manage_unions', // Explicit union management
+    'manage_claims', // Explicit claims management
+    'view_death_traps', // Explicit death trap access
+    'create_death_trap_reports', // Explicit death trap creation
+    'manage_vehicles', // Explicit vehicle management
+    'manage_drivers', // Explicit driver management
+    'manage_stations', // Explicit station management
+    'manage_trips', // Explicit trip management
+    'manage_passengers', // Explicit passenger management
+    'view_reports', // Explicit reports access
+    'view_revenue', // Explicit revenue access
+    'view_tickets', // Explicit tickets access
+    'manage_incidents', // Explicit incident management
+    'view_ratings_complaints', // Explicit ratings access
+    'manage_basic_users', // Explicit basic user management
+    'view_dashboard', // Explicit dashboard access
+    'view_station_reports' // Explicit station reports
+  ], // Super admin has explicit access to everything
   
   // Regular Admin - Most permissions but with some restrictions
   admin: [
@@ -107,7 +127,8 @@ const rolePermissions: Record<UserRole, string[]> = {
     'manage_incidents', 
     'manage_claims', 
     'view_death_traps',
-    'create_death_trap_reports'
+    'create_death_trap_reports',
+    'view_reports' // Added for accident analysis access
   ],
   
   // Station Worker - Limited to station operations

@@ -17,9 +17,10 @@ export const generateId = (prefix: string, currentLength: number): string => {
   return `${prefix}${String(currentLength + 1).padStart(3, '0')}`;
 };
 
-export const getStatusInfo = (status: string, type: 'user' | 'vehicle' = 'user') => {
-  // statusOptions is a simple array, not typed by category
-  return statusOptions.find(s => s.value === status) || { 
+export const getStatusInfo = (status: string, type: 'trip' | 'vehicle' | 'driver' | 'station' | 'incident' | 'deathTrap' = 'trip') => {
+  // statusOptions is an object with categorized arrays
+  const categoryOptions = statusOptions[type] || [];
+  return categoryOptions.find(s => s.value === status) || { 
     value: status, 
     label: status.charAt(0).toUpperCase() + status.slice(1), 
     color: 'gray' 

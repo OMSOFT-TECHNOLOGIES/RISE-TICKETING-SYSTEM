@@ -16,7 +16,8 @@ import {
   FileText,
   Shield,
   Zap,
-  Heart
+  Heart,
+  Wallet
 } from 'lucide-react';
 import { 
   Sidebar, 
@@ -147,6 +148,14 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
       badge: null
     },
     {
+      title: 'Account Management',
+      icon: Wallet,
+      href: 'accounts',
+      permission: 'view_revenue',
+      badge: null,
+      restrictedAccess: true
+    },
+    {
       title: 'Passenger Tickets',
       icon: Ticket,
       href: 'tickets',
@@ -167,7 +176,7 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
       title: 'User Management',
       icon: Users,
       href: 'users',
-      permission: 'manage_users',
+      permission: 'manage_users', // Super admin will bypass this check
       badge: null,
       restrictedAccess: true
     }
@@ -203,6 +212,10 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
     }
 
     // For non-super admin users, check permissions
+    // Special handling for district_incident_reporter to access all safety & incidents pages
+    const isIncidentReporter = user?.role === 'district_incident_reporter';
+    const safetyIncidentPages = ['incidents', 'incident-claims', 'death-traps', 'accident-analysis'];
+    
     const hasBasicPermission = hasPermission(item.permission) || 
       (item.href === 'users' && hasPermission('manage_basic_users')) ||
       (item.href === 'unions' && hasPermission('manage_unions')) ||
@@ -212,7 +225,10 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
       (item.href === 'incidents' && hasPermission('manage_incidents')) ||
       (item.href === 'accident-analysis' && (hasPermission('view_reports') || hasPermission('manage_incidents'))) ||
       (item.href === 'tickets' && hasPermission('view_tickets')) ||
-      (item.href === 'ratings-complaints' && (hasPermission('view_reports') || hasPermission('view_ratings_complaints')));
+      (item.href === 'accounts' && hasPermission('view_revenue')) ||
+      (item.href === 'ratings-complaints' && (hasPermission('view_reports') || hasPermission('view_ratings_complaints'))) ||
+      // Grant full access to all safety & incidents pages for incident reporters
+      (isIncidentReporter && safetyIncidentPages.includes(item.href));
 
     if (!hasBasicPermission) {
       return null;
@@ -222,8 +238,11 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
     const isRestricted = item.restrictedAccess && 
       ((item.href === 'users' && !hasPermission('manage_users')) ||
        (item.href === 'unions' && !hasPermission('manage_unions')) ||
-       (item.href === 'incident-claims' && !hasPermission('manage_claims')) ||
-       (item.href === 'death-traps' && !hasPermission('view_death_traps') && !hasPermission('create_death_trap_reports')));
+       (item.href === 'incident-claims' && !hasPermission('manage_claims') && !isIncidentReporter) ||
+       (item.href === 'accounts' && !hasPermission('view_revenue')) ||
+       (item.href === 'death-traps' && !hasPermission('view_death_traps') && !hasPermission('create_death_trap_reports') && !isIncidentReporter)) &&
+       // Never show restrictions for incident reporters on safety pages
+       !(isIncidentReporter && safetyIncidentPages.includes(item.href));
 
     return (
       <SidebarMenuItem key={item.href}>
@@ -261,6 +280,10 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
     const visibleItems = isSuperAdmin() ? 
       items : 
       items.filter(item => {
+        // Special handling for district_incident_reporter to access all safety & incidents pages
+        const isIncidentReporter = user?.role === 'district_incident_reporter';
+        const safetyIncidentPages = ['incidents', 'incident-claims', 'death-traps', 'accident-analysis'];
+        
         return hasPermission(item.permission) || 
           (item.href === 'users' && hasPermission('manage_basic_users')) ||
           (item.href === 'unions' && hasPermission('manage_unions')) ||
@@ -270,7 +293,10 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
           (item.href === 'incidents' && hasPermission('manage_incidents')) ||
           (item.href === 'accident-analysis' && (hasPermission('view_reports') || hasPermission('manage_incidents'))) ||
           (item.href === 'tickets' && hasPermission('view_tickets')) ||
-          (item.href === 'ratings-complaints' && (hasPermission('view_reports') || hasPermission('view_ratings_complaints')));
+          (item.href === 'accounts' && hasPermission('view_revenue')) ||
+          (item.href === 'ratings-complaints' && (hasPermission('view_reports') || hasPermission('view_ratings_complaints'))) ||
+          // Grant full access to all safety & incidents pages for incident reporters
+          (isIncidentReporter && safetyIncidentPages.includes(item.href));
       });
     
     if (visibleItems.length === 0) {
