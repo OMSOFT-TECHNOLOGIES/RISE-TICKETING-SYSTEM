@@ -27,12 +27,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { MoreHorizontal, Trash2, UserCheck } from 'lucide-react';
+import { usePageAction } from './context/PageActionContext';
 
 const vehicleMakes = ['Hyundai', 'Tata', 'Mercedes', 'Isuzu', 'Toyota', 'Ford', 'Volkswagen'];
 const fuelTypes = ['Diesel', 'Petrol', 'CNG', 'Electric'];
 
 export function VehicleManagement() {
   const { user } = useAuth();
+  const { pendingAction, clearAction } = usePageAction();
   const dataEntry = useDataEntryStation();
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,6 +96,13 @@ export function VehicleManagement() {
   useEffect(() => {
     fetchVehicles();
   }, [user?.stationId, user?.role, dataEntry.effectiveStationId]);
+
+  useEffect(() => {
+    if (pendingAction === 'new-vehicle') {
+      setShowAddDialog(true);
+      clearAction();
+    }
+  }, [pendingAction, clearAction]);
 
   const handleAddVehicle = async () => {
     const sid = dataEntry.requireStationId();

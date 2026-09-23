@@ -7,6 +7,7 @@ import { MapPin, Search, Navigation, RotateCcw, AlertCircle, Loader2 } from 'luc
 import { Badge } from './ui/badge';
 import { notify } from './utils/notify';
 import { GHANA_BOUNDS, DEFAULT_MAP_CENTER } from './IncidentManagement/constants';
+import { GHANA_MAP_QUICK_LOCATIONS } from './constants/ghanaMapQuickLocations';
 import {
   getDefaultGoogleMapOptions,
   getGoogleMapsApiKey,
@@ -42,17 +43,6 @@ export function MapLocationPicker({
   const [isLoading, setIsLoading] = useState(false);
   const [mapLoading, setMapLoading] = useState(true);
   const [mapError, setMapError] = useState<string | null>(null);
-
-  const commonLocations = [
-    { name: 'Accra Central', lat: 5.56, lng: -0.2057 },
-    { name: 'Kumasi', lat: 6.6885, lng: -1.6244 },
-    { name: 'Tamale', lat: 9.4034, lng: -0.8424 },
-    { name: 'Cape Coast', lat: 5.1053, lng: -1.2466 },
-    { name: 'Takoradi', lat: 4.896, lng: -1.7566 },
-    { name: 'Ho', lat: 6.6012, lng: 0.4816 },
-    { name: 'Sunyani', lat: 7.3395, lng: -2.3297 },
-    { name: 'Koforidua', lat: 6.0939, lng: -0.2637 },
-  ];
 
   const onLocationSelectRef = useRef(onLocationSelect);
   onLocationSelectRef.current = onLocationSelect;
@@ -158,7 +148,7 @@ export function MapLocationPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- map initializes once
   }, []);
 
-  const handleQuickLocation = (location: typeof commonLocations[0]) => {
+  const handleQuickLocation = (location: (typeof GHANA_MAP_QUICK_LOCATIONS)[number]) => {
     const loc = { lat: location.lat, lng: location.lng, address: location.name };
     placeMarker(loc);
     void reverseGeocode(loc);
@@ -226,7 +216,7 @@ export function MapLocationPicker({
 
     const geocoder = geocoderRef.current;
     if (!geocoder) {
-      const found = commonLocations.find((loc) =>
+      const found = GHANA_MAP_QUICK_LOCATIONS.find((loc) =>
         loc.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
       if (found) {
@@ -339,7 +329,7 @@ export function MapLocationPicker({
           <div className="space-y-2">
             <Label className="text-sm text-muted-foreground">Quick Select:</Label>
             <div className="flex flex-wrap gap-2">
-              {commonLocations.slice(0, 6).map((location) => (
+              {GHANA_MAP_QUICK_LOCATIONS.slice(0, 6).map((location) => (
                 <Button
                   key={location.name}
                   type="button"

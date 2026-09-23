@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 
-export type PageActionId = 'new-trip' | 'new-passenger';
+export type PageActionId = 'new-trip' | 'new-passenger' | 'new-user' | 'new-vehicle';
 
 interface PageActionContextType {
   pendingAction: PageActionId | null;

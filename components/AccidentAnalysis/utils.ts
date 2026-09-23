@@ -207,7 +207,7 @@ export function buildAccidentFromForm(
     roadConditions: form.roadConditions || 'unknown',
     timeOfDay: 'unknown',
     reportedBy: user?.fullName ?? user?.username ?? 'Administrator',
-    stationId: user?.stationId ?? 'STA001',
+    stationId: user?.stationId ?? '',
     status: 'pending',
     insuranceClaim: 'pending',
     cost: 0,

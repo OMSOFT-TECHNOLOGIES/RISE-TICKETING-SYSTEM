@@ -1,7 +1,7 @@
 # Backend API Integration Guide
 
 ## Overview
-The RISE frontend connects to a REST API (default `http://localhost:8081`). Core modules (auth, users, stations, unions, vehicles) have API clients in `components/utils/api/`. All other modules currently use mock data and are documented for backend implementation.
+The RISE frontend connects to a REST API (default `http://localhost:8081`). Feature modules load and persist data through clients in `components/utils/api/`; UI no longer uses simulated submissions or hardcoded business lists for stations, routes, or fleet records.
 
 **Complete endpoint specification:** [BACKEND_API_SPEC.md](./BACKEND_API_SPEC.md) — single source of truth for all 19 API domains (~120 endpoints).
 
@@ -225,8 +225,8 @@ See `components/utils/api/unions.ts` — [BACKEND_API_SPEC.md § Unions](./BACKE
 #### Vehicles (`vehicleApi`)
 See `components/utils/api/vehicles.ts` — [BACKEND_API_SPEC.md § Vehicles](./BACKEND_API_SPEC.md#5-vehicles).
 
-#### Modules awaiting backend (mock data today)
-Trips, Passengers, Tickets, Drivers, Incidents, Claims, Death Traps, Accidents, Reports, Revenue, Accounts, Ratings/Complaints, Notifications, Dashboard — see [BACKEND_API_SPEC.md](./BACKEND_API_SPEC.md) sections 6–19.
+#### Additional domains
+Trips, Passengers, Tickets, Drivers, Incidents, Claims, Death Traps, Accidents, Reports, Revenue, Accounts, Ratings/Complaints, Notifications, and Dashboard — see [BACKEND_API_SPEC.md](./BACKEND_API_SPEC.md) sections 6–19.
 
 ---
 

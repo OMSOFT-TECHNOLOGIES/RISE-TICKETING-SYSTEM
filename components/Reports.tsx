@@ -31,7 +31,8 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from './AuthContext';
-import { reportApi } from './utils/api';
+import { reportApi, stationApi, tripApi, parseListResponse } from './utils/api';
+import { parseStationsFromApiResponse, type StationPickerOption } from './utils/stationPicker';
 import { notify } from './utils/notify';
 import {
   num,
@@ -79,6 +80,42 @@ export function Reports() {
   const [financialData, setFinancialData] = useState<Record<string, unknown> | null>(null);
   const [operationsData, setOperationsData] = useState<Record<string, unknown> | null>(null);
   const [performanceData, setPerformanceData] = useState<Record<string, unknown> | null>(null);
+  const [stationOptions, setStationOptions] = useState<StationPickerOption[]>([]);
+  const [routeOptions, setRouteOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const [stationsRes, tripsRes] = await Promise.all([
+        stationApi.getAll({ limit: 500, status: 'active' }),
+        tripApi.getAll({ limit: 500 }),
+      ]);
+
+      if (cancelled) return;
+
+      if (stationsRes.success && stationsRes.data) {
+        setStationOptions(parseStationsFromApiResponse(stationsRes.data));
+      }
+
+      if (tripsRes.success && tripsRes.data) {
+        const trips = parseListResponse<Record<string, unknown>>(tripsRes.data, 'trips');
+        const routes = new Set<string>();
+        for (const trip of trips) {
+          const explicit = trip.route != null ? String(trip.route).trim() : '';
+          const from = trip.routeFrom != null ? String(trip.routeFrom).trim() : '';
+          const to = trip.routeTo != null ? String(trip.routeTo).trim() : '';
+          const label = explicit || (from && to ? `${from} - ${to}` : from || to);
+          if (label) routes.add(label);
+        }
+        setRouteOptions(Array.from(routes).sort((a, b) => a.localeCompare(b)));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchAllReports = useCallback(async () => {
     setLoading(true);
@@ -293,10 +330,11 @@ export function Reports() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Stations</SelectItem>
-                  <SelectItem value="accra">Accra Central</SelectItem>
-                  <SelectItem value="kumasi">Kumasi Station</SelectItem>
-                  <SelectItem value="takoradi">Takoradi Terminal</SelectItem>
-                  <SelectItem value="tamale">Tamale Station</SelectItem>
+                  {stationOptions.map((station) => (
+                    <SelectItem key={station.id} value={station.id}>
+                      {station.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -309,10 +347,11 @@ export function Reports() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Routes</SelectItem>
-                  <SelectItem value="accra-kumasi">Accra - Kumasi</SelectItem>
-                  <SelectItem value="kumasi-tamale">Kumasi - Tamale</SelectItem>
-                  <SelectItem value="takoradi-accra">Takoradi - Accra</SelectItem>
-                  <SelectItem value="cape-coast-accra">Cape Coast - Accra</SelectItem>
+                  {routeOptions.map((route) => (
+                    <SelectItem key={route} value={route}>
+                      {route}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

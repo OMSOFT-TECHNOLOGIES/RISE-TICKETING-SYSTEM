@@ -124,7 +124,7 @@ The application is fully responsive and optimized for:
 ```
 ├── components/           # React components
 │   ├── ui/              # Reusable UI components
-│   ├── constants/       # Mock data and constants
+│   ├── constants/       # Shared enums, roles, and UI constants
 │   ├── hooks/          # Custom React hooks
 │   └── utils/          # Utility functions
 ├── styles/             # Global CSS and Tailwind config

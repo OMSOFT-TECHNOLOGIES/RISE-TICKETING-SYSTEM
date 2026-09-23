@@ -171,11 +171,6 @@ function driverIdForSchedule(
   return undefined;
 }
 
-const ghanaDestinations = [
-  'Accra Central', 'Kumasi Main', 'Cape Coast', 'Tamale', 'Takoradi',
-  'Ho', 'Sunyani', 'Koforidua', 'Wa', 'Bolgatanga', 'Tarkwa', 'Tema'
-];
-
 const tripStatuses = [
   { value: 'scheduled', label: 'Scheduled', color: 'bg-[#193cb8]/10 text-[#193cb8]' },
   { value: 'in_progress', label: 'In Progress', color: 'bg-green-100 text-green-800' },
@@ -982,29 +977,21 @@ export function TripBooking() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="from">From</Label>
-                    <Select value={newTrip.routeFrom} onValueChange={(value) => setNewTrip({...newTrip, routeFrom: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select origin" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ghanaDestinations.map((dest) => (
-                          <SelectItem key={dest} value={dest}>{dest}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Input
+                      id="from"
+                      value={newTrip.routeFrom}
+                      onChange={(e) => setNewTrip({ ...newTrip, routeFrom: e.target.value })}
+                      placeholder="Origin city or station"
+                    />
                   </div>
                   <div>
                     <Label htmlFor="to">To</Label>
-                    <Select value={newTrip.routeTo} onValueChange={(value) => setNewTrip({...newTrip, routeTo: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select destination" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ghanaDestinations.map((dest) => (
-                          <SelectItem key={dest} value={dest}>{dest}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Input
+                      id="to"
+                      value={newTrip.routeTo}
+                      onChange={(e) => setNewTrip({ ...newTrip, routeTo: e.target.value })}
+                      placeholder="Destination city or station"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">

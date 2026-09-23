@@ -190,28 +190,55 @@ export function mergeStatsFromApi(
   };
 }
 
+function unwrapAnalyticsPayload(data: unknown, arrayKey?: string): unknown {
+  if (data == null) return data;
+  if (Array.isArray(data)) return data;
+  if (typeof data !== 'object') return data;
+
+  const record = data as Record<string, unknown>;
+  if (record.distribution != null) return record.distribution;
+  if (arrayKey && record[arrayKey] != null) return record[arrayKey];
+  if (record.data != null) return record.data;
+  return data;
+}
+
 export function mapApiRatingDistribution(
   data: unknown,
   fallback: RatingDistributionItem[]
 ): RatingDistributionItem[] {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return fallback;
-  }
-  const entries = Object.entries(data as Record<string, unknown>).filter(
-    ([key]) => !Number.isNaN(Number(key))
-  );
-  if (entries.length === 0) return fallback;
+  const payload = unwrapAnalyticsPayload(data);
+  if (payload == null) return fallback.filter((item) => item.count > 0);
 
-  const total = entries.reduce((sum, [, count]) => sum + Number(count ?? 0), 0);
+  let entries: [string, number][] = [];
+
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      if (!item || typeof item !== 'object') continue;
+      const row = item as { rating?: number | string; stars?: number; count?: number };
+      const stars = row.rating ?? row.stars;
+      if (stars == null) continue;
+      entries.push([String(stars), Number(row.count ?? 0)]);
+    }
+  } else if (typeof payload === 'object') {
+    entries = Object.entries(payload as Record<string, unknown>)
+      .filter(([key]) => !Number.isNaN(Number(key)))
+      .map(([key, count]) => [key, Number(count ?? 0)] as [string, number]);
+  }
+
+  if (entries.length === 0) return fallback.filter((item) => item.count > 0);
+
+  const total = entries.reduce((sum, [, count]) => sum + count, 0);
+  if (total <= 0) return [];
+
   return entries
+    .filter(([, count]) => count > 0)
     .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([stars, count]) => {
+    .map(([stars, value]) => {
       const starNum = Number(stars);
-      const value = Number(count ?? 0);
       return {
         rating: `${stars} Star${starNum === 1 ? '' : 's'}`,
         count: value,
-        percentage: total > 0 ? Math.round((value / total) * 100) : 0,
+        percentage: Math.round((value / total) * 100),
         color: RATING_COLORS[starNum] ?? '#64748b',
       };
     });
@@ -236,14 +263,41 @@ export function mapApiComplaintCategories(
   data: unknown,
   fallback: ComplaintCategoryItem[]
 ): ComplaintCategoryItem[] {
-  if (!Array.isArray(data) || data.length === 0) return fallback;
-  return data.map((item, index) => {
-    const row = item as { category?: string; count?: number };
-    const category = String(row.category ?? 'other');
-    return {
-      category: getCategoryLabel(category),
-      count: Number(row.count ?? 0),
-      color: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
-    };
-  });
+  const payload = unwrapAnalyticsPayload(data, 'categories');
+  const rows: Array<{ category: string; count: number }> = [];
+
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      if (!item || typeof item !== 'object') continue;
+      const row = item as { category?: string; count?: number };
+      rows.push({
+        category: String(row.category ?? 'other'),
+        count: Number(row.count ?? 0),
+      });
+    }
+  } else if (payload && typeof payload === 'object') {
+    for (const [category, count] of Object.entries(payload as Record<string, unknown>)) {
+      rows.push({ category, count: Number(count ?? 0) });
+    }
+  }
+
+  const source =
+    rows.length > 0
+      ? rows
+      : fallback.map((item) => ({
+          category: item.category,
+          count: item.count,
+        }));
+
+  const withCounts = source
+    .filter((row) => row.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  if (withCounts.length === 0) return [];
+
+  return withCounts.map((row, index) => ({
+    category: getCategoryLabel(row.category),
+    count: row.count,
+    color: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+  }));
 }

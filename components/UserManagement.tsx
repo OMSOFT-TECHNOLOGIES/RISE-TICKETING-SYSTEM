@@ -66,9 +66,11 @@ type UserFormOptions = {
   stations: UserFormStationOption[];
 };
 import { notify } from './utils/notify';
+import { usePageAction } from './context/PageActionContext';
 
 export function UserManagement() {
   const { user, isSuperAdmin, isAdmin, hasPermission } = useAuth();
+  const { pendingAction, clearAction } = usePageAction();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -178,6 +180,13 @@ export function UserManagement() {
   useEffect(() => {
     setPage(1);
   }, [searchTerm, roleFilter, statusFilter]);
+
+  useEffect(() => {
+    if (pendingAction === 'new-user') {
+      setShowAddDialog(true);
+      clearAction();
+    }
+  }, [pendingAction, clearAction]);
 
   const validateForm = () => {
     const errors: Record<string, string> = {};

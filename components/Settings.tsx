@@ -68,7 +68,6 @@ export function Settings() {
   };
 
   const handleSave = (section: string) => {
-    // Simulate saving settings
     notify.success(`${section} settings saved successfully`);
     
     // Theme changes are automatically saved by the ThemeProvider

@@ -9,6 +9,7 @@ import { authApi } from './utils/api';
 import { Shield, Bus, Eye, EyeOff, Mail, AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { notify } from './utils/notify';
+import { appEnv } from './utils/env';
 
 export function LoginPage() {
   const [username, setUsername] = useState('');
@@ -51,16 +52,18 @@ export function LoginPage() {
     }
   };
 
-  const demoCredentials = [
-    { role: 'Super Admin', username: 'superadmin', email: 'superadmin@rise.gov.gh' },
-    { role: 'Administrator', username: 'admin', email: 'admin@rise.gov.gh' },
-    { role: 'Regional Manager', username: 'rmgr_ashanti', email: 'regional.ashanti@rise.gov.gh' },
-    { role: 'District Manager', username: 'dmgr_kumasi', email: 'district.kumasi@rise.gov.gh' },
-    { role: 'Operations Admin', username: 'ops_admin', email: 'operations@rise.gov.gh' },
-    { role: 'HR Admin', username: 'hr_admin', email: 'hr@rise.gov.gh' },
-    { role: 'Incident Reporter', username: 'incident_reporter', email: 'incidents.accra@rise.gov.gh' },
-    { role: 'Station Worker', username: 'worker', email: 'worker.station1@rise.gov.gh' }
-  ];
+  const demoCredentials = appEnv.isDev
+    ? [
+        { role: 'Super Admin', username: 'superadmin', email: 'superadmin@rise.gov.gh' },
+        { role: 'Administrator', username: 'admin', email: 'admin@rise.gov.gh' },
+        { role: 'Regional Manager', username: 'rmgr_ashanti', email: 'regional.ashanti@rise.gov.gh' },
+        { role: 'District Manager', username: 'dmgr_kumasi', email: 'district.kumasi@rise.gov.gh' },
+        { role: 'Operations Admin', username: 'ops_admin', email: 'operations@rise.gov.gh' },
+        { role: 'HR Admin', username: 'hr_admin', email: 'hr@rise.gov.gh' },
+        { role: 'Incident Reporter', username: 'incident_reporter', email: 'incidents.accra@rise.gov.gh' },
+        { role: 'Station Worker', username: 'worker', email: 'worker.station1@rise.gov.gh' },
+      ]
+    : [];
 
   const handleDemoLogin = (demoUsername: string) => {
     setUsername(demoUsername);
@@ -281,7 +284,7 @@ export function LoginPage() {
           </CardContent>
         </Card>
 
-        {/* Demo Credentials */}
+        {appEnv.isDev && (
         <Card className="bg-[#193cb8]/10 border-[#193cb8]/20">
           <CardHeader>
             <CardTitle className="text-sm">Demo Accounts - Click to Auto-Fill</CardTitle>
@@ -304,36 +307,7 @@ export function LoginPage() {
             ))}
           </CardContent>
         </Card>
-
-        {/* Quick Login Buttons */}
-        <Card className="bg-green-50 border-green-200">
-          <CardHeader>
-            <CardTitle className="text-sm text-green-800">Quick Login</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDemoLogin('admin')}
-                className="text-xs"
-              >
-                Login as Admin
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDemoLogin('incident_reporter')}
-                className="text-xs"
-              >
-                Incident Reporter
-              </Button>
-            </div>
-            <div className="text-xs text-green-700 mt-2 p-2 bg-green-100 rounded">
-              <strong>✅ Test Access:</strong> Incident Reporter has full access to all Safety & Incidents pages including Accident Analysis.
-            </div>
-          </CardContent>
-        </Card>
+        )}
 
         {/* System Info */}
         <div className="text-center text-xs text-gray-500">

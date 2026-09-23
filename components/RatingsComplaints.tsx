@@ -124,18 +124,28 @@ export function RatingsComplaints() {
     () => mergeStatsFromApi(calculateStats(ratings, complaints), apiStats),
     [ratings, complaints, apiStats]
   );
-  const ratingDistribution = useMemo(
-    () => mapApiRatingDistribution(apiRatingDistribution, buildRatingDistribution(ratings)),
-    [ratings, apiRatingDistribution]
-  );
-  const complaintCategories = useMemo(
-    () => mapApiComplaintCategories(apiComplaintCategories, buildComplaintCategories(complaints)),
-    [complaints, apiComplaintCategories]
-  );
-  const ratingTrends = useMemo(
-    () => mapApiRatingTrends(apiRatingTrends, buildRatingTrends(ratings)),
-    [ratings, apiRatingTrends]
-  );
+  const ratingDistribution = useMemo(() => {
+    if (ratings.length === 0) return [];
+    return mapApiRatingDistribution(
+      apiRatingDistribution,
+      buildRatingDistribution(ratings)
+    );
+  }, [ratings, apiRatingDistribution]);
+
+  const complaintCategories = useMemo(() => {
+    if (complaints.length === 0) return [];
+    return mapApiComplaintCategories(
+      apiComplaintCategories,
+      buildComplaintCategories(complaints)
+    );
+  }, [complaints, apiComplaintCategories]);
+
+  const ratingTrends = useMemo(() => {
+    if (ratings.length === 0) return [];
+    return mapApiRatingTrends(apiRatingTrends, buildRatingTrends(ratings)).filter(
+      (point) => point.totalRatings > 0
+    );
+  }, [ratings, apiRatingTrends]);
 
   const filteredRatings = useMemo(
     () => filterRatings(ratings, ratingFilters),
