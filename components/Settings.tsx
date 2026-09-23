@@ -26,7 +26,7 @@ import {
   Mail,
   MapPin
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from './utils/notify';
 
 export function Settings() {
   const { user } = useAuth();
@@ -69,25 +69,25 @@ export function Settings() {
 
   const handleSave = (section: string) => {
     // Simulate saving settings
-    toast.success(`${section} settings saved successfully`);
+    notify.success(`${section} settings saved successfully`);
     
     // Theme changes are automatically saved by the ThemeProvider
   };
 
   const handleProfileUpdate = () => {
     if (settings.newPassword && settings.newPassword !== settings.confirmPassword) {
-      toast.error('New passwords do not match');
+      notify.error('New passwords do not match');
       return;
     }
     handleSave('Profile');
   };
 
   const handleExportData = () => {
-    toast.success('Data export started. You will receive an email when ready.');
+    notify.success('Data export started. You will receive an email when ready.');
   };
 
   const handleImportData = () => {
-    toast.info('Import feature will be available in the next update.');
+    notify.info('Import feature will be available in the next update.');
   };
 
   return (

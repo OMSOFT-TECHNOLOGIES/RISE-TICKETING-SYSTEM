@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -6,6 +6,8 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Badge } from './ui/badge';
 import { useAuth } from './AuthContext';
+import { stationApi, userApi, unionApi, parseListResponse } from './utils/api';
+import { parseRiseNumericId } from './utils/helpers';
 import { 
   MapPin, 
   Users, 
@@ -24,118 +26,32 @@ import {
   Calendar,
   AlertTriangle,
   CheckCircle,
-  Building
+  Building,
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { toast } from 'sonner';
-
-// Mock station data
-const mockStations = [
-  {
-    id: 'STA001',
-    name: 'Accra Central Station',
-    code: 'ACC',
-    address: '123 Liberation Road, Accra Central',
-    city: 'Accra',
-    region: 'Greater Accra',
-    phone: '+233 30 123 4567',
-    email: 'accra.central@rise.com',
-    manager: 'John Doe',
-    capacity: 200,
-    platforms: 8,
-    status: 'active',
-    vehicles: 15,
-    drivers: 25,
-    dailyTrips: 45,
-    monthlyRevenue: 125000,
-    operatingHours: '05:00 - 22:00',
-    facilities: ['Waiting Area', 'Restrooms', 'Food Court', 'Parking', 'WiFi'],
-    coordinates: { lat: 5.6037, lng: -0.1870 },
-    establishedDate: '2019-03-15',
-    lastInspection: '2024-01-10',
-    nextInspection: '2024-04-10'
-  },
-  {
-    id: 'STA002',
-    name: 'Kumasi Main Station',
-    code: 'KUM',
-    address: '456 Kejetia Road, Kumasi',
-    city: 'Kumasi',
-    region: 'Ashanti',
-    phone: '+233 32 234 5678',
-    email: 'kumasi.main@rise.com',
-    manager: 'Jane Smith',
-    capacity: 150,
-    platforms: 6,
-    status: 'active',
-    vehicles: 12,
-    drivers: 18,
-    dailyTrips: 35,
-    monthlyRevenue: 95000,
-    operatingHours: '05:30 - 21:30',
-    facilities: ['Waiting Area', 'Restrooms', 'Parking', 'Security'],
-    coordinates: { lat: 6.6885, lng: -1.6244 },
-    establishedDate: '2019-06-20',
-    lastInspection: '2024-01-08',
-    nextInspection: '2024-04-08'
-  },
-  {
-    id: 'STA003',
-    name: 'Takoradi Port Station',
-    code: 'TAK',
-    address: '789 Harbor Street, Takoradi',
-    city: 'Takoradi',
-    region: 'Western',
-    phone: '+233 31 345 6789',
-    email: 'takoradi.port@rise.com',
-    manager: 'Robert Johnson',
-    capacity: 100,
-    platforms: 4,
-    status: 'maintenance',
-    vehicles: 8,
-    drivers: 12,
-    dailyTrips: 20,
-    monthlyRevenue: 45000,
-    operatingHours: '06:00 - 20:00',
-    facilities: ['Waiting Area', 'Restrooms', 'Parking'],
-    coordinates: { lat: 4.8845, lng: -1.7554 },
-    establishedDate: '2020-01-10',
-    lastInspection: '2024-01-05',
-    nextInspection: '2024-04-05'
-  },
-  {
-    id: 'STA004',
-    name: 'Ho Regional Station',
-    code: 'HOR',
-    address: '321 Volta Road, Ho',
-    city: 'Ho',
-    region: 'Volta',
-    phone: '+233 36 456 7890',
-    email: 'ho.regional@rise.com',
-    manager: 'Mary Wilson',
-    capacity: 80,
-    platforms: 3,
-    status: 'active',
-    vehicles: 6,
-    drivers: 10,
-    dailyTrips: 15,
-    monthlyRevenue: 32000,
-    operatingHours: '06:00 - 19:00',
-    facilities: ['Waiting Area', 'Restrooms'],
-    coordinates: { lat: 6.6112, lng: 0.4712 },
-    establishedDate: '2020-09-05',
-    lastInspection: '2024-01-12',
-    nextInspection: '2024-04-12'
-  }
-];
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Check, ChevronsUpDown } from 'lucide-react';
+import { notify } from './utils/notify';
+import { cn } from './ui/utils';
 
 export function StationManagement() {
   const { user } = useAuth();
-  const [stations, setStations] = useState(mockStations);
+  const [stations, setStations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [managers, setManagers] = useState<any[]>([]);
+  const [openManagerCombobox, setOpenManagerCombobox] = useState(false);
+  const [unions, setUnions] = useState<any[]>([]);
+  const [formOptionsLoading, setFormOptionsLoading] = useState(false);
+  const [openUnionCombobox, setOpenUnionCombobox] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [regionFilter, setRegionFilter] = useState('all');
@@ -143,7 +59,103 @@ export function StationManagement() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [stationToDelete, setStationToDelete] = useState<any>(null);
   const [editingStation, setEditingStation] = useState<any>(null);
+
+  // Fetch stations from backend
+  const fetchStations = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await stationApi.getAll({
+        region: regionFilter !== 'all' ? regionFilter : undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+        search: searchTerm || undefined
+      });
+      
+      if (response.success && response.data) {
+        const stationsData = response.data.stations || response.data;
+        setStations(Array.isArray(stationsData) ? stationsData : []);
+      } else {
+        console.error('Fetch stations error:', response);
+        setError(
+          typeof response.error === 'string'
+            ? response.error
+            : (response.error as { message?: string })?.message || 'Failed to load stations'
+        );
+      }
+    } catch (err) {
+      console.error('Fetch stations exception:', err);
+      setError(err instanceof Error ? err.message : 'Failed to connect to server');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load stations on component mount
+  useEffect(() => {
+    fetchStations();
+  }, []);
+
+  const fetchManagers = async () => {
+    try {
+      const response = await userApi.getActiveManagers();
+      if (response.success && response.data) {
+        setManagers(parseListResponse(response.data));
+      } else {
+        setManagers([]);
+        if (response.error) {
+          console.error('Failed to fetch managers:', response.error);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch managers:', error);
+      setManagers([]);
+    }
+  };
+
+  const fetchUnions = async (region?: string) => {
+    try {
+      const response = await unionApi.getActiveUnions(
+        region && region !== 'all' ? region : undefined
+      );
+      if (response.success && response.data) {
+        setUnions(parseListResponse(response.data, 'unions'));
+      } else {
+        setUnions([]);
+        if (response.error) {
+          console.error('Failed to fetch unions:', response.error);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch unions:', error);
+      setUnions([]);
+    }
+  };
+
+  const loadStationFormOptions = async (region?: string) => {
+    setFormOptionsLoading(true);
+    try {
+      await Promise.all([fetchManagers(), fetchUnions(region)]);
+    } finally {
+      setFormOptionsLoading(false);
+    }
+  };
+
+  const openAddStationDialog = () => {
+    resetForm();
+    setShowAddDialog(true);
+    setFormOptionsLoading(true);
+    void fetchUnions().finally(() => setFormOptionsLoading(false));
+  };
+
+  // Refetch when filters change
+  useEffect(() => {
+    if (!loading) {
+      fetchStations();
+    }
+  }, [statusFilter, regionFilter]);
 
   const [stationForm, setStationForm] = useState({
     name: '',
@@ -151,12 +163,11 @@ export function StationManagement() {
     address: '',
     city: '',
     region: '',
+    district: '',
     phone: '',
     email: '',
     manager: '',
-    capacity: '',
-    platforms: '',
-    operatingHours: ''
+    union: ''
   });
 
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
@@ -169,10 +180,10 @@ export function StationManagement() {
   // Apply search and filters
   const filteredStations = userStations.filter(station => {
     const matchesSearch = searchTerm === '' || 
-      station.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      station.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      station.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      station.manager.toLowerCase().includes(searchTerm.toLowerCase());
+      station.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      station.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      station.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      station.managerName?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesStatus = statusFilter === 'all' || station.status === statusFilter;
     const matchesRegion = regionFilter === 'all' || station.region === regionFilter;
@@ -205,65 +216,122 @@ export function StationManagement() {
       address: '',
       city: '',
       region: '',
+      district: '',
       phone: '',
       email: '',
       manager: '',
-      capacity: '',
-      platforms: '',
-      operatingHours: ''
+      union: ''
     });
   };
 
-  const handleAddStation = () => {
-    if (!stationForm.name || !stationForm.code || !stationForm.address) {
-      toast.error('Please fill in all required fields');
+  const handleAddStation = async () => {
+    if (
+      !stationForm.name ||
+      !stationForm.code ||
+      !stationForm.address ||
+      !stationForm.city ||
+      !stationForm.region ||
+      !stationForm.district ||
+      !stationForm.phone
+    ) {
+      notify.error(
+        'Please fill in all required fields (name, code, address, city, region, district, phone)'
+      );
       return;
     }
 
-    const newStation = {
-      id: `STA${String(stations.length + 1).padStart(3, '0')}`,
-      ...stationForm,
-      capacity: parseInt(stationForm.capacity) || 0,
-      platforms: parseInt(stationForm.platforms) || 1,
-      status: 'active',
-      vehicles: 0,
-      drivers: 0,
-      dailyTrips: 0,
-      monthlyRevenue: 0,
-      facilities: ['Waiting Area', 'Restrooms'],
-      coordinates: { lat: 0, lng: 0 },
-      establishedDate: new Date().toISOString().split('T')[0],
-      lastInspection: null,
-      nextInspection: null
-    };
+    try {
+      const stationData = {
+        name: stationForm.name,
+        code: stationForm.code.toUpperCase(),
+        address: stationForm.address,
+        city: stationForm.city,
+        region: stationForm.region,
+        district: stationForm.district,
+        phone: stationForm.phone,
+        email: stationForm.email || undefined,
+        unionId: parseRiseNumericId(stationForm.union),
+        // Not shown in UI; satisfies API/DB until backend optional-capacity build is deployed
+        capacity: 1,
+      };
 
-    setStations([...stations, newStation]);
-    resetForm();
-    setShowAddDialog(false);
-    toast.success('Station added successfully');
+      const response = await stationApi.create(stationData);
+
+      if (response.success) {
+        notify.success(response.message || 'Station added successfully');
+        await fetchStations();
+        resetForm();
+        setShowAddDialog(false);
+      } else {
+        console.error('Station creation error:', response);
+        const errorMsg = typeof response.error === 'string' 
+          ? response.error 
+          : (response.error && typeof response.error === 'object' && 'message' in response.error)
+            ? String((response.error as any).message)
+            : response.details || 'Please try again';
+        notify.error('Failed to add station', {
+          description: errorMsg,
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Station creation exception:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Please check your connection';
+      notify.error('Failed to add station', {
+        description: errorMessage,
+        duration: 5000
+      });
+    }
   };
 
-  const handleEditStation = () => {
-    if (!editingStation || !stationForm.name || !stationForm.code || !stationForm.address) {
-      toast.error('Please fill in all required fields');
+  const handleEditStation = async () => {
+    if (!editingStation || !stationForm.name || !stationForm.code || !stationForm.address || !stationForm.region || !stationForm.district) {
+      notify.error('Please fill in all required fields (name, code, address, region, district)');
       return;
     }
 
-    setStations(stations.map(station => 
-      station.id === editingStation.id 
-        ? {
-            ...station,
-            ...stationForm,
-            capacity: parseInt(stationForm.capacity) || station.capacity,
-            platforms: parseInt(stationForm.platforms) || station.platforms
-          }
-        : station
-    ));
+    try {
+      const stationData = {
+        name: stationForm.name,
+        code: stationForm.code.toUpperCase(),
+        address: stationForm.address,
+        city: stationForm.city,
+        region: stationForm.region,
+        district: stationForm.district,
+        phone: stationForm.phone,
+        email: stationForm.email,
+        managerId: parseRiseNumericId(stationForm.manager),
+        unionId: parseRiseNumericId(stationForm.union),
+      };
 
-    resetForm();
-    setShowEditDialog(false);
-    setEditingStation(null);
-    toast.success('Station updated successfully');
+      const response = await stationApi.update(editingStation.id, stationData);
+
+      if (response.success) {
+        notify.success(response.message || 'Station updated successfully');
+        await fetchStations();
+        resetForm();
+        setShowEditDialog(false);
+        setEditingStation(null);
+      } else {
+        console.error('Station update error:', response);
+        const errorMsg = typeof response.error === 'string' 
+          ? response.error 
+          : (response.error && typeof response.error === 'object' && 'message' in response.error)
+            ? String((response.error as any).message)
+            : response.details || 'Please try again';
+        notify.error('Failed to update station', {
+          description: errorMsg,
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Station update exception:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Please check your connection';
+      notify.error('Failed to update station', {
+        description: errorMessage,
+        duration: 5000
+      });
+    }
   };
 
   const handleViewStation = (station: any) => {
@@ -274,27 +342,77 @@ export function StationManagement() {
   const handleEdit = (station: any) => {
     setEditingStation(station);
     setStationForm({
-      name: station.name,
-      code: station.code,
-      address: station.address,
-      city: station.city,
-      region: station.region,
-      phone: station.phone,
-      email: station.email,
-      manager: station.manager,
-      capacity: station.capacity.toString(),
-      platforms: station.platforms.toString(),
-      operatingHours: station.operatingHours
+      name: station.name || '',
+      code: station.code || '',
+      address: station.address || '',
+      city: station.city || '',
+      region: station.region || '',
+      district: station.district || '',
+      phone: station.phone || '',
+      email: station.email || '',
+      manager: station.managerUserId || '',
+      union: station.unionId != null ? String(station.unionId) : '',
     });
     setShowEditDialog(true);
+    void loadStationFormOptions(station.region);
   };
 
-  const handleDelete = (stationId: string) => {
-    setStations(stations.filter(s => s.id !== stationId));
-    toast.success('Station deleted successfully');
+  const handleDelete = async (stationId: string) => {
+    try {
+      const response = await stationApi.delete(stationId);
+
+      if (response.success) {
+        notify.success(response.message || 'Station deleted successfully');
+        await fetchStations();
+        setShowDeleteDialog(false);
+        setStationToDelete(null);
+      } else {
+        console.error('Station deletion error:', response);
+        notify.error('Failed to delete station', {
+          description: response.error || 'Please try again',
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Station deletion exception:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Please check your connection';
+      notify.error('Failed to delete station', {
+        description: errorMessage,
+        duration: 5000
+      });
+    }
   };
 
-  const uniqueRegions = [...new Set(stations.map(s => s.region))];
+  const confirmDelete = (station: any) => {
+    setStationToDelete(station);
+    setShowDeleteDialog(true);
+  };
+
+  const uniqueRegions = [...new Set(stations.map(s => s.region).filter(Boolean))];
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
+          <p className="mt-2 text-gray-600">Loading stations...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={fetchStations}>Retry</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -309,7 +427,7 @@ export function StationManagement() {
           </p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setShowAddDialog(true)}>
+          <Button onClick={openAddStationDialog}>
             <Plus className="h-4 w-4 mr-2" />
             Add Station
           </Button>
@@ -320,7 +438,7 @@ export function StationManagement() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-6 text-center">
-            <Building className="h-8 w-8 mx-auto mb-2 text-blue-600" />
+            <Building className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
             <p className="text-2xl font-bold">{userStations.length}</p>
             <p className="text-sm text-gray-600">Total Stations</p>
           </CardContent>
@@ -328,21 +446,21 @@ export function StationManagement() {
         <Card>
           <CardContent className="p-6 text-center">
             <Bus className="h-8 w-8 mx-auto mb-2 text-green-600" />
-            <p className="text-2xl font-bold">{userStations.reduce((sum, s) => sum + s.vehicles, 0)}</p>
+            <p className="text-2xl font-bold">{userStations.reduce((sum, s) => sum + (s.vehicles || 0), 0)}</p>
             <p className="text-sm text-gray-600">Total Vehicles</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6 text-center">
-            <Users className="h-8 w-8 mx-auto mb-2 text-purple-600" />
-            <p className="text-2xl font-bold">{userStations.reduce((sum, s) => sum + s.drivers, 0)}</p>
+            <Users className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
+            <p className="text-2xl font-bold">{userStations.reduce((sum, s) => sum + (s.drivers || 0), 0)}</p>
             <p className="text-sm text-gray-600">Total Drivers</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6 text-center">
             <DollarSign className="h-8 w-8 mx-auto mb-2 text-yellow-600" />
-            <p className="text-2xl font-bold">₵{userStations.reduce((sum, s) => sum + s.monthlyRevenue, 0).toLocaleString()}</p>
+            <p className="text-2xl font-bold">₵{userStations.reduce((sum, s) => sum + (s.monthlyRevenue || 0), 0).toLocaleString()}</p>
             <p className="text-sm text-gray-600">Monthly Revenue</p>
           </CardContent>
         </Card>
@@ -416,6 +534,7 @@ export function StationManagement() {
                 <TableHead>Station</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead>Manager</TableHead>
+                <TableHead>Union</TableHead>
                 <TableHead>Capacity</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Performance</TableHead>
@@ -427,33 +546,39 @@ export function StationManagement() {
                 <TableRow key={station.id}>
                   <TableCell>
                     <div>
-                      <p className="font-medium">{station.name}</p>
-                      <p className="text-sm text-gray-500">{station.code}</p>
+                      <p className="font-medium">{station.name || 'N/A'}</p>
+                      <p className="text-sm text-gray-500">{station.code || 'N/A'}</p>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div>
-                      <p className="text-sm">{station.city}</p>
-                      <p className="text-sm text-gray-500">{station.region}</p>
+                      <p className="text-sm">{station.city || 'N/A'}</p>
+                      <p className="text-sm text-gray-500">{station.region || 'N/A'}</p>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div>
-                      <p className="text-sm">{station.manager}</p>
-                      <p className="text-sm text-gray-500">{station.phone}</p>
+                      <p className="text-sm">{station.managerName || 'N/A'}</p>
+                      <p className="text-sm text-gray-500">{station.phone || 'N/A'}</p>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div>
-                      <p className="text-sm">{station.capacity} passengers</p>
-                      <p className="text-sm text-gray-500">{station.platforms} platforms</p>
+                      <p className="text-sm">{station.unionName || 'N/A'}</p>
+                      <p className="text-sm text-gray-500">{station.unionAcronym || ''}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      <p className="text-sm">{station.capacity || 'N/A'} passengers</p>
+                      <p className="text-sm text-gray-500">{station.platforms || 'N/A'} platforms</p>
                     </div>
                   </TableCell>
                   <TableCell>{getStatusBadge(station.status)}</TableCell>
                   <TableCell>
                     <div>
-                      <p className="text-sm">{station.dailyTrips} trips/day</p>
-                      <p className="text-sm text-gray-500">₵{station.monthlyRevenue.toLocaleString()}/month</p>
+                      <p className="text-sm">{station.dailyTrips || 0} trips/day</p>
+                      <p className="text-sm text-gray-500">₵{station.monthlyRevenue?.toLocaleString() || '0'}/month</p>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -475,7 +600,7 @@ export function StationManagement() {
                               Edit Station
                             </DropdownMenuItem>
                             <DropdownMenuItem 
-                              onClick={() => handleDelete(station.id)}
+                              onClick={() => confirmDelete(station)}
                               className="text-red-600"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
@@ -495,11 +620,11 @@ export function StationManagement() {
 
       {/* Add Station Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Station</DialogTitle>
             <DialogDescription>
-              Create a new RISE transport station
+              Create a new RISE transport station. Station managers are linked to a station when you create a station_manager user in User Management.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -566,9 +691,19 @@ export function StationManagement() {
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="district">District *</Label>
+              <Input
+                id="district"
+                value={stationForm.district}
+                onChange={(e) => setStationForm({...stationForm, district: e.target.value})}
+                placeholder="e.g., Accra Metropolitan"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number</Label>
+                <Label htmlFor="phone">Phone Number *</Label>
                 <Input
                   id="phone"
                   value={stationForm.phone}
@@ -588,46 +723,57 @@ export function StationManagement() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="manager">Station Manager</Label>
-                <Input
-                  id="manager"
-                  value={stationForm.manager}
-                  onChange={(e) => setStationForm({...stationForm, manager: e.target.value})}
-                  placeholder="Manager name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="capacity">Capacity</Label>
-                <Input
-                  id="capacity"
-                  type="number"
-                  value={stationForm.capacity}
-                  onChange={(e) => setStationForm({...stationForm, capacity: e.target.value})}
-                  placeholder="200"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="platforms">Platforms</Label>
-                <Input
-                  id="platforms"
-                  type="number"
-                  value={stationForm.platforms}
-                  onChange={(e) => setStationForm({...stationForm, platforms: e.target.value})}
-                  placeholder="8"
-                />
-              </div>
-            </div>
-
             <div className="space-y-2">
-              <Label htmlFor="hours">Operating Hours</Label>
-              <Input
-                id="hours"
-                value={stationForm.operatingHours}
-                onChange={(e) => setStationForm({...stationForm, operatingHours: e.target.value})}
-                placeholder="05:00 - 22:00"
-              />
+                <Label htmlFor="union">Transport Union</Label>
+                <Popover modal={true} open={openUnionCombobox} onOpenChange={setOpenUnionCombobox}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openUnionCombobox}
+                      className="w-full justify-between"
+                    >
+                      {stationForm.union
+                        ? unions.find((union) => union.id.toString() === stationForm.union)?.name
+                        : "Select union..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[280px] p-0 z-[9999]" align="start" side="bottom" sideOffset={5}>
+                    <Command>
+                      <CommandInput placeholder="Search unions..." />
+                      <CommandList>
+                        <CommandEmpty>
+                          {formOptionsLoading
+                            ? 'Loading unions…'
+                            : unions.length === 0
+                              ? 'No active unions available.'
+                              : 'No union found.'}
+                        </CommandEmpty>
+                        <CommandGroup>
+                          {unions.map((union) => (
+                            <CommandItem
+                              key={union.id}
+                              value={union.name}
+                              onSelect={() => {
+                                setStationForm({...stationForm, union: union.id.toString()});
+                                setOpenUnionCombobox(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  stationForm.union === union.id.toString() ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {union.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
             </div>
 
             <div className="flex space-x-2">
@@ -648,7 +794,7 @@ export function StationManagement() {
 
       {/* Edit Station Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Station</DialogTitle>
             <DialogDescription>
@@ -719,6 +865,16 @@ export function StationManagement() {
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="edit-district">District *</Label>
+              <Input
+                id="edit-district"
+                value={stationForm.district}
+                onChange={(e) => setStationForm({...stationForm, district: e.target.value})}
+                placeholder="e.g., Accra Metropolitan"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="edit-phone">Phone Number</Label>
@@ -741,46 +897,111 @@ export function StationManagement() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="edit-manager">Station Manager</Label>
-                <Input
-                  id="edit-manager"
-                  value={stationForm.manager}
-                  onChange={(e) => setStationForm({...stationForm, manager: e.target.value})}
-                  placeholder="Manager name"
-                />
+                <Popover modal={true} open={openManagerCombobox} onOpenChange={setOpenManagerCombobox}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openManagerCombobox}
+                      className="w-full justify-between"
+                    >
+                      {stationForm.manager
+                        ? managers.find((manager) => manager.id.toString() === stationForm.manager)?.fullName
+                        : "Select manager..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[280px] p-0 z-[9999]" align="start" side="bottom" sideOffset={5}>
+                    <Command>
+                      <CommandInput placeholder="Search managers..." />
+                      <CommandList>
+                        <CommandEmpty>
+                          {formOptionsLoading
+                            ? 'Loading managers…'
+                            : managers.length === 0
+                              ? 'No active station managers available.'
+                              : 'No manager found.'}
+                        </CommandEmpty>
+                        <CommandGroup>
+                          {managers.map((manager) => (
+                            <CommandItem
+                              key={manager.id}
+                              value={manager.fullName}
+                              onSelect={() => {
+                                setStationForm({...stationForm, manager: manager.id.toString()});
+                                setOpenManagerCombobox(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  stationForm.manager === manager.id.toString() ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {manager.fullName}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-capacity">Capacity</Label>
-                <Input
-                  id="edit-capacity"
-                  type="number"
-                  value={stationForm.capacity}
-                  onChange={(e) => setStationForm({...stationForm, capacity: e.target.value})}
-                  placeholder="200"
-                />
+                <Label htmlFor="edit-union">Transport Union</Label>
+                <Popover modal={true} open={openUnionCombobox} onOpenChange={setOpenUnionCombobox}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openUnionCombobox}
+                      className="w-full justify-between"
+                    >
+                      {stationForm.union
+                        ? unions.find((union) => union.id.toString() === stationForm.union)?.name
+                        : "Select union..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[280px] p-0 z-[9999]" align="start" side="bottom" sideOffset={5}>
+                    <Command>
+                      <CommandInput placeholder="Search unions..." />
+                      <CommandList>
+                        <CommandEmpty>
+                          {formOptionsLoading
+                            ? 'Loading unions…'
+                            : unions.length === 0
+                              ? 'No active unions available.'
+                              : 'No union found.'}
+                        </CommandEmpty>
+                        <CommandGroup>
+                          {unions.map((union) => (
+                            <CommandItem
+                              key={union.id}
+                              value={union.name}
+                              onSelect={() => {
+                                setStationForm({...stationForm, union: union.id.toString()});
+                                setOpenUnionCombobox(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  stationForm.union === union.id.toString() ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {union.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-platforms">Platforms</Label>
-                <Input
-                  id="edit-platforms"
-                  type="number"
-                  value={stationForm.platforms}
-                  onChange={(e) => setStationForm({...stationForm, platforms: e.target.value})}
-                  placeholder="8"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-hours">Operating Hours</Label>
-              <Input
-                id="edit-hours"
-                value={stationForm.operatingHours}
-                onChange={(e) => setStationForm({...stationForm, operatingHours: e.target.value})}
-                placeholder="05:00 - 22:00"
-              />
             </div>
 
             <div className="flex space-x-2">
@@ -826,19 +1047,19 @@ export function StationManagement() {
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Station Name:</span>
-                          <span className="font-medium">{selectedStation.name}</span>
+                          <span className="font-medium">{selectedStation?.name || 'N/A'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Code:</span>
-                          <span>{selectedStation.code}</span>
+                          <span>{selectedStation?.code || 'N/A'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Status:</span>
-                          <span>{getStatusBadge(selectedStation.status)}</span>
+                          <span>{getStatusBadge(selectedStation?.status || 'inactive')}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Region:</span>
-                          <span>{selectedStation.region}</span>
+                          <span>{selectedStation?.region || 'N/A'}</span>
                         </div>
                       </div>
                     </div>
@@ -848,15 +1069,15 @@ export function StationManagement() {
                       <div className="space-y-2 text-sm">
                         <div className="flex items-center gap-2">
                           <Mail className="h-3 w-3 text-muted-foreground" />
-                          <span>{selectedStation.email}</span>
+                          <span>{selectedStation?.email || 'N/A'}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <Phone className="h-3 w-3 text-muted-foreground" />
-                          <span>{selectedStation.phone}</span>
+                          <span>{selectedStation?.phone || 'N/A'}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <MapPin className="h-3 w-3 text-muted-foreground" />
-                          <span>{selectedStation.address}</span>
+                          <span>{selectedStation?.address || 'N/A'}</span>
                         </div>
                       </div>
                     </div>
@@ -868,15 +1089,22 @@ export function StationManagement() {
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Passenger Capacity:</span>
-                          <span>{selectedStation.capacity}</span>
+                          <span>{selectedStation?.capacity || 'N/A'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Platforms:</span>
-                          <span>{selectedStation.platforms}</span>
+                          <span>{selectedStation?.platforms || 'N/A'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Operating Hours:</span>
-                          <span>{selectedStation.operatingHours}</span>
+                          <span>
+                            {selectedStation?.operatingHours 
+                              ? typeof selectedStation.operatingHours === 'object' 
+                                ? `${selectedStation.operatingHours.open} - ${selectedStation.operatingHours.close}`
+                                : selectedStation.operatingHours
+                              : 'N/A'
+                            }
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -886,11 +1114,11 @@ export function StationManagement() {
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Station Manager:</span>
-                          <span>{selectedStation.manager}</span>
+                          <span>{selectedStation?.managerName || 'N/A'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Established:</span>
-                          <span>{new Date(selectedStation.establishedDate).toLocaleDateString()}</span>
+                          <span>{selectedStation?.establishedDate ? new Date(selectedStation.establishedDate).toLocaleDateString() : 'N/A'}</span>
                         </div>
                       </div>
                     </div>
@@ -906,21 +1134,21 @@ export function StationManagement() {
                       <div className="p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm text-muted-foreground">Active Vehicles</span>
-                          <span className="text-xl font-bold text-green-600">{selectedStation.vehicles}</span>
+                          <span className="text-xl font-bold text-green-600">{selectedStation?.vehicles || 0}</span>
                         </div>
                         <div className="text-xs text-muted-foreground">Currently operational</div>
                       </div>
                       <div className="p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm text-muted-foreground">Available Drivers</span>
-                          <span className="text-xl font-bold text-blue-600">{selectedStation.drivers}</span>
+                          <span className="text-xl font-bold text-[#193cb8]">{selectedStation?.drivers || 0}</span>
                         </div>
                         <div className="text-xs text-muted-foreground">On duty today</div>
                       </div>
                       <div className="p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm text-muted-foreground">Daily Trips</span>
-                          <span className="text-xl font-bold text-purple-600">{selectedStation.dailyTrips}</span>
+                          <span className="text-xl font-bold text-[#193cb8]">{selectedStation?.dailyTrips || 0}</span>
                         </div>
                         <div className="text-xs text-muted-foreground">Average per day</div>
                       </div>
@@ -933,14 +1161,14 @@ export function StationManagement() {
                       <div className="p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm text-muted-foreground">Monthly Revenue</span>
-                          <span className="text-xl font-bold text-yellow-600">₵{selectedStation.monthlyRevenue.toLocaleString()}</span>
+                          <span className="text-xl font-bold text-yellow-600">₵{selectedStation?.monthlyRevenue?.toLocaleString() || '0'}</span>
                         </div>
                         <div className="text-xs text-muted-foreground">This month</div>
                       </div>
                       <div className="p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm text-muted-foreground">Daily Average</span>
-                          <span className="text-xl font-bold text-orange-600">₵{Math.round(selectedStation.monthlyRevenue / 30).toLocaleString()}</span>
+                          <span className="text-xl font-bold text-orange-600">₵{selectedStation?.monthlyRevenue ? Math.round(selectedStation.monthlyRevenue / 30).toLocaleString() : '0'}</span>
                         </div>
                         <div className="text-xs text-muted-foreground">Per day</div>
                       </div>
@@ -953,12 +1181,16 @@ export function StationManagement() {
                 <div>
                   <h4 className="font-medium mb-4">Available Facilities</h4>
                   <div className="grid grid-cols-2 gap-4">
-                    {selectedStation.facilities.map((facility: string, index: number) => (
-                      <div key={index} className="flex items-center gap-2 p-3 border rounded-lg">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                        <span className="text-sm">{facility}</span>
-                      </div>
-                    ))}
+                    {selectedStation?.facilities && selectedStation.facilities.length > 0 ? (
+                      selectedStation.facilities.map((facility: string, index: number) => (
+                        <div key={index} className="flex items-center gap-2 p-3 border rounded-lg">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <span className="text-sm">{facility}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground col-span-2">No facilities listed</p>
+                    )}
                   </div>
                 </div>
               </TabsContent>
@@ -970,11 +1202,11 @@ export function StationManagement() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="p-4 border rounded-lg">
                         <div className="flex items-center gap-2 mb-2">
-                          <Calendar className="h-4 w-4 text-blue-600" />
+                          <Calendar className="h-4 w-4 text-[#193cb8]" />
                           <span className="font-medium">Last Inspection</span>
                         </div>
                         <div className="text-sm">
-                          {selectedStation.lastInspection 
+                          {selectedStation?.lastInspection 
                             ? new Date(selectedStation.lastInspection).toLocaleDateString()
                             : 'Not scheduled'
                           }
@@ -986,7 +1218,7 @@ export function StationManagement() {
                           <span className="font-medium">Next Inspection</span>
                         </div>
                         <div className="text-sm">
-                          {selectedStation.nextInspection 
+                          {selectedStation?.nextInspection 
                             ? new Date(selectedStation.nextInspection).toLocaleDateString()
                             : 'Not scheduled'
                           }
@@ -1000,6 +1232,36 @@ export function StationManagement() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              Delete Station
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <span className="font-semibold">{stationToDelete?.name}</span>? This action cannot be undone. All data associated with this station will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setShowDeleteDialog(false);
+              setStationToDelete(null);
+            }}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleDelete(stationToDelete?.id)}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Station
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

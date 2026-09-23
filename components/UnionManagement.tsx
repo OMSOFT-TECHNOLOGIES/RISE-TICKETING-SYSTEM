@@ -1,22 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Plus, Edit2, Trash2, Users, Phone, Mail, Calendar, MapPin } from 'lucide-react';
-import { mockUnions, Union } from './constants/mockData';
-import { toast } from 'sonner';
+import { Plus, Edit2, Trash2, Users, Phone, Mail, Calendar, MapPin, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { unionApi } from './utils/api';
+
+interface Union {
+  id: string;
+  name: string;
+  acronym: string;
+  description: string;
+  region: string;
+  established: string;
+  contactPerson: string;
+  contactPhone: string;
+  contactEmail: string;
+  memberCount: number;
+  isActive: boolean;
+}
+import { notify } from './utils/notify';
 
 export function UnionManagement() {
-  const [unions, setUnions] = useState<Union[]>(mockUnions);
+  const [unions, setUnions] = useState<Union[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [unionToDelete, setUnionToDelete] = useState<Union | null>(null);
   const [editingUnion, setEditingUnion] = useState<Union | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -38,6 +56,32 @@ export function UnionManagement() {
     'Western North', 'Ahafo', 'Bono East', 'North East', 'Savannah', 'Oti'
   ];
 
+  // Fetch unions from backend
+  const fetchUnions = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await unionApi.getAll({ search: searchTerm || undefined });
+      
+      if (response.success && response.data) {
+        const unionsData = response.data.unions || response.data;
+        setUnions(Array.isArray(unionsData) ? unionsData : []);
+      } else {
+        console.error('Fetch unions error:', response);
+        setError(response.error || 'Failed to load unions');
+      }
+    } catch (err) {
+      console.error('Fetch unions exception:', err);
+      setError(err instanceof Error ? err.message : 'Failed to connect to server');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUnions();
+  }, []);
+
   const filteredUnions = unions.filter(union =>
     union.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     union.acronym.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -58,22 +102,53 @@ export function UnionManagement() {
     });
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!formData.name || !formData.acronym || !formData.region) {
-      toast.error('Please fill in all required fields');
+      notify.error('Please fill in all required fields');
       return;
     }
 
-    const newUnion: Union = {
-      id: `UN${String(unions.length + 1).padStart(3, '0')}`,
-      ...formData,
-      established: new Date().toISOString().split('T')[0]
-    };
+    try {
+      const unionData = {
+        name: formData.name,
+        acronym: formData.acronym.toUpperCase(),
+        description: formData.description,
+        region: formData.region,
+        contactPerson: formData.contactPerson,
+        contactPhone: formData.contactPhone,
+        contactEmail: formData.contactEmail,
+        memberCount: formData.memberCount || 0,
+        isActive: formData.isActive,
+        established: new Date().toISOString().split('T')[0]
+      };
 
-    setUnions([...unions, newUnion]);
-    toast.success('Union added successfully');
-    setIsAddDialogOpen(false);
-    resetForm();
+      const response = await unionApi.create(unionData);
+
+      if (response.success) {
+        notify.success(response.message || 'Union added successfully');
+        await fetchUnions();
+        setIsAddDialogOpen(false);
+        resetForm();
+      } else {
+        console.error('Union creation error:', response);
+        const errorMsg = typeof response.error === 'string' 
+          ? response.error 
+          : (response.error && typeof response.error === 'object' && 'message' in response.error)
+            ? String((response.error as any).message)
+            : response.details || 'Please try again';
+        notify.error('Failed to add union', {
+          description: errorMsg,
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Union creation exception:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Please check your connection';
+      notify.error('Failed to add union', {
+        description: errorMessage,
+        duration: 5000
+      });
+    }
   };
 
   const handleEdit = (union: Union) => {
@@ -92,36 +167,122 @@ export function UnionManagement() {
     setIsEditDialogOpen(true);
   };
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (!editingUnion) return;
 
     if (!formData.name || !formData.acronym || !formData.region) {
-      toast.error('Please fill in all required fields');
+      notify.error('Please fill in all required fields');
       return;
     }
 
-    const updatedUnions = unions.map(union =>
-      union.id === editingUnion.id
-        ? { ...union, ...formData }
-        : union
-    );
+    try {
+      const unionData = {
+        name: formData.name,
+        acronym: formData.acronym.toUpperCase(),
+        description: formData.description,
+        region: formData.region,
+        contactPerson: formData.contactPerson,
+        contactPhone: formData.contactPhone,
+        contactEmail: formData.contactEmail,
+        memberCount: formData.memberCount || 0,
+        isActive: formData.isActive
+      };
 
-    setUnions(updatedUnions);
-    toast.success('Union updated successfully');
-    setIsEditDialogOpen(false);
-    setEditingUnion(null);
-    resetForm();
+      const response = await unionApi.update(editingUnion.id, unionData);
+
+      if (response.success) {
+        notify.success(response.message || 'Union updated successfully');
+        await fetchUnions();
+        setIsEditDialogOpen(false);
+        setEditingUnion(null);
+        resetForm();
+      } else {
+        console.error('Union update error:', response);
+        const errorMsg = typeof response.error === 'string' 
+          ? response.error 
+          : (response.error && typeof response.error === 'object' && 'message' in response.error)
+            ? String((response.error as any).message)
+            : response.details || 'Please try again';
+        notify.error('Failed to update union', {
+          description: errorMsg,
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Union update exception:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Please check your connection';
+      notify.error('Failed to update union', {
+        description: errorMessage,
+        duration: 5000
+      });
+    }
   };
 
-  const handleDelete = (unionId: string) => {
-    if (confirm('Are you sure you want to delete this union?')) {
-      setUnions(unions.filter(union => union.id !== unionId));
-      toast.success('Union deleted successfully');
+  const confirmDelete = (union: Union) => {
+    setUnionToDelete(union);
+  };
+
+  const handleDelete = async () => {
+    if (!unionToDelete) return;
+
+    try {
+      const response = await unionApi.delete(unionToDelete.id);
+
+      if (response.success) {
+        notify.success(response.message || 'Union deleted successfully');
+        await fetchUnions();
+        setUnionToDelete(null);
+      } else {
+        console.error('Union deletion error:', response);
+        const errorMsg = typeof response.error === 'string' 
+          ? response.error 
+          : (response.error && typeof response.error === 'object' && 'message' in response.error)
+            ? String((response.error as any).message)
+            : response.details || 'Please try again';
+        notify.error('Failed to delete union', {
+          description: errorMsg,
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Union deletion exception:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Please check your connection';
+      notify.error('Failed to delete union', {
+        description: errorMessage,
+        duration: 5000
+      });
     }
   };
 
   const totalMembers = unions.reduce((sum, union) => sum + union.memberCount, 0);
   const activeUnions = unions.filter(union => union.isActive).length;
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
+          <p className="mt-2 text-gray-600">Loading unions...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={fetchUnions}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -268,7 +429,7 @@ export function UnionManagement() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle>Total Members</CardTitle>
-            <Users className="h-4 w-4 text-blue-600" />
+            <Users className="h-4 w-4 text-[#193cb8]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalMembers.toLocaleString()}</div>
@@ -360,7 +521,7 @@ export function UnionManagement() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(union.id)}
+                        onClick={() => confirmDelete(union)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -471,6 +632,31 @@ export function UnionManagement() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!unionToDelete} onOpenChange={() => setUnionToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              Confirm Deletion
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the union "{unionToDelete?.name}" ({unionToDelete?.acronym})?
+              This action cannot be undone and will permanently remove this union and all associated data from the system.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              Delete Union
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

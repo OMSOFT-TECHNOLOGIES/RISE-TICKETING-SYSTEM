@@ -18,6 +18,7 @@ import { IncidentClaims } from '../IncidentClaims';
 import { DeathTrapReporting } from '../DeathTrapReporting';
 import { Settings } from '../Settings';
 import { AccessRestricted } from '../AccessRestricted';
+import { DEFAULT_PAGE, resolvePageId, type PageId } from '../config/pages';
 import { checkPageAccess, getRestrictionMessage } from './accessControl';
 
 interface PageRouterProps {
@@ -28,76 +29,54 @@ interface PageRouterProps {
   userRole?: string;
 }
 
-export function renderPage({ 
-  currentPage, 
-  showSettings, 
-  hasPermission, 
+const PAGE_COMPONENTS: Record<PageId, React.ComponentType> = {
+  dashboard: Dashboard,
+  stations: StationManagement,
+  unions: UnionManagement,
+  vehicles: VehicleManagement,
+  drivers: DriverManagement,
+  trips: TripBooking,
+  passengers: PassengerManagement,
+  reports: Reports,
+  users: UserManagement,
+  revenue: Revenue,
+  accounts: AccountManagement,
+  tickets: PassengerTickets,
+  'ratings-complaints': RatingsComplaints,
+  'accident-analysis': AccidentAnalysis,
+  incidents: IncidentManagement,
+  'incident-claims': IncidentClaims,
+  'death-traps': DeathTrapReporting,
+  'new-trip': TripBooking,
+  'new-passenger': PassengerManagement,
+  settings: Settings,
+};
+
+function renderPageComponent(page: string): React.ReactElement {
+  const pageId = resolvePageId(page);
+  const Component = PAGE_COMPONENTS[pageId] ?? PAGE_COMPONENTS[DEFAULT_PAGE];
+  return <Component />;
+}
+
+export function renderPage({
+  currentPage,
+  showSettings,
+  hasPermission,
   isSuperAdmin,
-  userRole
+  userRole,
 }: PageRouterProps): React.ReactElement {
-  
-  // Settings page takes precedence
   if (showSettings) {
     return <Settings />;
   }
 
-  // Super Admin has unrestricted access to everything
   if (isSuperAdmin()) {
     return renderPageComponent(currentPage);
   }
 
-  // Check access for non-super admin users
   if (!checkPageAccess(currentPage, hasPermission, isSuperAdmin, userRole)) {
     const restrictionInfo = getRestrictionMessage(currentPage);
     return <AccessRestricted {...restrictionInfo} />;
   }
 
-  // Render the page component
   return renderPageComponent(currentPage);
-}
-
-// Main page component rendering logic
-function renderPageComponent(page: string): React.ReactElement {
-  switch (page) {
-    case 'dashboard':
-      return <Dashboard />;
-    case 'stations':
-      return <StationManagement />;
-    case 'unions':
-      return <UnionManagement />;
-    case 'vehicles':
-      return <VehicleManagement />;
-    case 'drivers':
-      return <DriverManagement />;
-    case 'trips':
-      return <TripBooking />;
-    case 'passengers':
-      return <PassengerManagement />;
-    case 'reports':
-      return <Reports />;
-    case 'users':
-      return <UserManagement />;
-    case 'revenue':
-      return <Revenue />;
-    case 'accounts':
-      return <AccountManagement />;
-    case 'tickets':
-      return <PassengerTickets />;
-    case 'ratings-complaints':
-      return <RatingsComplaints />;
-    case 'accident-analysis':
-      return <AccidentAnalysis />;
-    case 'incidents':
-      return <IncidentManagement />;
-    case 'incident-claims':
-      return <IncidentClaims />;
-    case 'death-traps':
-      return <DeathTrapReporting />;
-    case 'new-trip':
-      return <TripBooking />;
-    case 'new-passenger':
-      return <PassengerManagement />;
-    default:
-      return <Dashboard />;
-  }
 }

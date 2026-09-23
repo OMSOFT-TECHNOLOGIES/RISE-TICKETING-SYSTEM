@@ -5,7 +5,10 @@ import { Label } from './ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Alert, AlertDescription } from './ui/alert';
 import { useAuth } from './AuthContext';
-import { Shield, Bus, Eye, EyeOff } from 'lucide-react';
+import { authApi } from './utils/api';
+import { Shield, Bus, Eye, EyeOff, Mail, AlertCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { notify } from './utils/notify';
 
 export function LoginPage() {
   const [username, setUsername] = useState('');
@@ -13,6 +16,10 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetEmailError, setResetEmailError] = useState('');
+  const [isSubmittingReset, setIsSubmittingReset] = useState(false);
   const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -23,10 +30,22 @@ export function LoginPage() {
     try {
       const success = await login(username, password);
       if (!success) {
-        setError('Invalid username or password. Please check your credentials and try again.');
+        // Check console for more specific error
+        const errorMsg = 'Invalid username or password. Please check your credentials and try again.';
+        setError(errorMsg);
+        notify.error('Login Failed', {
+          description: errorMsg,
+          duration: 5000
+        });
       }
     } catch (error) {
-      setError('Login failed. Please try again.');
+      console.error('Login exception:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Login failed. Please try again.';
+      setError(errorMsg);
+      notify.error('Login Failed', {
+        description: errorMsg,
+        duration: 5000
+      });
     } finally {
       setLoading(false);
     }
@@ -46,6 +65,50 @@ export function LoginPage() {
   const handleDemoLogin = (demoUsername: string) => {
     setUsername(demoUsername);
     setPassword('password');
+  };
+
+  const handleForgotPassword = async () => {
+    setResetEmailError('');
+    
+    if (!resetEmail.trim()) {
+      setResetEmailError('Email address is required');
+      return;
+    }
+    
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resetEmail)) {
+      setResetEmailError('Please enter a valid email address');
+      return;
+    }
+    
+    setIsSubmittingReset(true);
+    
+    try {
+      const response = await authApi.forgotPassword(resetEmail);
+      
+      if (response.success) {
+        notify.success('Password reset link sent!', {
+          description: response.message || `If an account exists for ${resetEmail}, you will receive a password reset link shortly.`
+        });
+        
+        setResetEmail('');
+        setShowForgotPassword(false);
+      } else {
+        console.error('Forgot password error:', response);
+        notify.error('Failed to send reset link', {
+          description: response.error || 'Please try again.',
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Forgot password exception:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to send reset link. Please try again.';
+      notify.error('Failed to send reset link', {
+        description: errorMsg,
+        duration: 5000
+      });
+    } finally {
+      setIsSubmittingReset(false);
+    }
   };
 
   return (
@@ -120,17 +183,111 @@ export function LoginPage() {
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Signing in...' : 'Sign In'}
               </Button>
+              
+              {/* Forgot Password */}
+              <div className="text-center">
+                <Dialog open={showForgotPassword} onOpenChange={(open) => {
+                  setShowForgotPassword(open);
+                  if (!open) {
+                    setResetEmail('');
+                    setResetEmailError('');
+                  }
+                }}>
+                  <DialogTrigger asChild>
+                    <Button variant="link" className="text-[#193cb8] text-sm p-0 h-auto">
+                      Forgot your password?
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader className="space-y-3 pb-4 border-b">
+                      <DialogTitle className="flex items-center gap-3 text-xl">
+                        <div className="p-2 bg-[#193cb8]/10 rounded-lg">
+                          <Mail className="h-5 w-5 text-[#193cb8]" />
+                        </div>
+                        Reset Your Password
+                      </DialogTitle>
+                      <DialogDescription className="text-base">
+                        Enter your email address and we'll send you a link to reset your password.
+                      </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="space-y-6 py-4">
+                      <div className="space-y-2.5">
+                        <Label htmlFor="resetEmail" className="flex items-center gap-1.5 text-sm font-semibold">
+                          Email Address
+                          <span className="text-destructive font-bold">*</span>
+                        </Label>
+                        <Input
+                          id="resetEmail"
+                          type="email"
+                          value={resetEmail}
+                          onChange={(e) => {
+                            setResetEmail(e.target.value);
+                            if (resetEmailError) {
+                              setResetEmailError('');
+                            }
+                          }}
+                          placeholder="your.email@rise.gov.gh"
+                          className={`h-11 ${resetEmailError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                          disabled={isSubmittingReset}
+                        />
+                        {resetEmailError && (
+                          <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
+                            <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
+                            <p className="text-sm text-destructive font-medium">
+                              {resetEmailError}
+                            </p>
+                          </div>
+                        )}
+                        {!resetEmailError && (
+                          <p className="text-xs text-muted-foreground">
+                            We'll send password reset instructions to this email
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex justify-end gap-3 pt-4 border-t">
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setShowForgotPassword(false)}
+                          disabled={isSubmittingReset}
+                          className="h-11 px-6 font-semibold"
+                        >
+                          Cancel
+                        </Button>
+                        <Button 
+                          onClick={handleForgotPassword}
+                          disabled={isSubmittingReset}
+                          className="min-w-[140px] h-11 px-6 font-semibold shadow-lg bg-[#193cb8] hover:bg-[#142f9e] text-white"
+                        >
+                          {isSubmittingReset ? (
+                            <>
+                              <div className="h-4 w-4 mr-2 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              Sending...
+                            </>
+                          ) : (
+                            <>
+                              <Mail className="h-4 w-4 mr-2" />
+                              Send Reset Link
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </form>
           </CardContent>
         </Card>
 
         {/* Demo Credentials */}
-        <Card className="bg-blue-50 border-blue-200">
+        <Card className="bg-[#193cb8]/10 border-[#193cb8]/20">
           <CardHeader>
             <CardTitle className="text-sm">Demo Accounts - Click to Auto-Fill</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="text-xs text-blue-700 mb-3 p-2 bg-blue-100 rounded">
+            <div className="text-xs text-[#193cb8] mb-3 p-2 bg-[#193cb8]/20 rounded">
               <strong>Password for all accounts:</strong> password
             </div>
             {demoCredentials.map((cred, index) => (
@@ -139,7 +296,7 @@ export function LoginPage() {
                 className="bg-white p-3 rounded border text-xs cursor-pointer hover:bg-gray-50 transition-colors"
                 onClick={() => handleDemoLogin(cred.username)}
               >
-                <div className="font-medium text-blue-900">{cred.role}</div>
+                <div className="font-medium text-[#193cb8]">{cred.role}</div>
                 <div className="text-gray-600">Username: {cred.username}</div>
                 <div className="text-gray-500 text-xs">{cred.email}</div>
                 <div className="text-green-600 text-xs mt-1">Click to auto-fill</div>

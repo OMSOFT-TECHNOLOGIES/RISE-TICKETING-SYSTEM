@@ -6,12 +6,16 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "vite"
+    "dev": "vite --mode development",
+    "build": "vite build --mode production",
+    "build:dev": "vite build --mode development",
+    "preview": "vite preview --mode production"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@googlemaps/js-api-loader": "^2.1.1",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -54,7 +58,10 @@
     "vaul": "^1.1.2"
   },
   "devDependencies": {
+    "@types/google.maps": "^3.66.3",
     "@types/node": "^24.2.0",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
     "vite": "^7.1.1"
   }
 }

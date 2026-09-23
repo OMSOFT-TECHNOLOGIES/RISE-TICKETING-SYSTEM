@@ -1,30 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { Button } from './ui/button';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
-import { useAuth } from './AuthContext';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogDescription, 
-  DialogHeader, 
-  DialogTitle 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
 } from './ui/dialog';
-import { 
-  Search, 
-  Route, 
-  Users, 
-  Bus, 
+import {
+  Search,
+  Route,
+  Users,
+  Bus,
   Ticket,
   MapPin,
   Phone,
   Mail,
   Calendar,
   Clock,
-  ArrowRight
 } from 'lucide-react';
 import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
+import { searchApi } from './utils/api';
 
 interface SearchDialogProps {
   open: boolean;
@@ -32,137 +30,79 @@ interface SearchDialogProps {
   initialQuery?: string;
 }
 
-// Mock search data
-const mockSearchData = {
-  trips: [
-    {
-      id: 'TRP001',
-      route: 'Accra Central → Kumasi Main',
-      departure: '2024-01-20T08:00:00',
-      vehicle: 'GV-123-20',
-      driver: 'Kwame Asante',
-      passengers: 45,
-      status: 'active'
-    },
-    {
-      id: 'TRP002',
-      route: 'Accra Central → Cape Coast',
-      departure: '2024-01-20T10:30:00',
-      vehicle: 'GV-456-21',
-      driver: 'Ama Osei',
-      passengers: 32,
-      status: 'boarding'
-    }
-  ],
-  passengers: [
-    {
-      id: 'PAS001',
-      name: 'John Doe',
-      phone: '+233 24 111 1111',
-      email: 'john.doe@email.com',
-      lastTrip: 'Accra → Kumasi',
-      totalTrips: 12
-    },
-    {
-      id: 'PAS002',
-      name: 'Jane Smith',
-      phone: '+233 26 222 2222',
-      email: 'jane.smith@email.com',
-      lastTrip: 'Kumasi → Accra',
-      totalTrips: 8
-    }
-  ],
-  vehicles: [
-    {
-      id: 'VEH001',
-      registrationNumber: 'GV-123-20',
-      make: 'Toyota',
-      model: 'Hiace',
-      capacity: 50,
-      station: 'Accra Central',
-      status: 'active'
-    },
-    {
-      id: 'VEH002',
-      registrationNumber: 'GV-456-21',
-      make: 'Mercedes',
-      model: 'Sprinter',
-      capacity: 35,
-      station: 'Accra Central',
-      status: 'maintenance'
-    }
-  ],
-  tickets: [
-    {
-      id: 'TKT001',
-      ticketNumber: 'TKT001',
-      passengerName: 'John Doe',
-      route: 'Accra → Kumasi',
-      date: '2024-01-20',
-      status: 'confirmed'
-    },
-    {
-      id: 'TKT002',
-      ticketNumber: 'TKT002',
-      passengerName: 'Jane Smith',
-      route: 'Accra → Kumasi',
-      date: '2024-01-20',
-      status: 'used'
-    }
-  ]
-};
+interface SearchResults {
+  trips?: Record<string, unknown>[];
+  passengers?: Record<string, unknown>[];
+  vehicles?: Record<string, unknown>[];
+  tickets?: Record<string, unknown>[];
+}
+
+function normalizeSearchResults(data: unknown): SearchResults {
+  if (!data || typeof data !== 'object') return {};
+
+  const record = data as Record<string, unknown>;
+  const nested = record.results && typeof record.results === 'object'
+    ? (record.results as Record<string, unknown>)
+    : record;
+
+  return {
+    trips: Array.isArray(nested.trips) ? nested.trips as Record<string, unknown>[] : [],
+    passengers: Array.isArray(nested.passengers) ? nested.passengers as Record<string, unknown>[] : [],
+    vehicles: Array.isArray(nested.vehicles) ? nested.vehicles as Record<string, unknown>[] : [],
+    tickets: Array.isArray(nested.tickets) ? nested.tickets as Record<string, unknown>[] : [],
+  };
+}
 
 export function SearchDialog({ open, onOpenChange, initialQuery = '' }: SearchDialogProps) {
-  const { user } = useAuth();
   const [query, setQuery] = useState(initialQuery);
-  const [results, setResults] = useState<any>({});
+  const [results, setResults] = useState<SearchResults>({});
   const [isSearching, setIsSearching] = useState(false);
 
-  useEffect(() => {
-    if (query.length >= 2) {
-      setIsSearching(true);
-      // Simulate search delay
-      const timer = setTimeout(() => {
-        performSearch(query);
-        setIsSearching(false);
-      }, 300);
-      
-      return () => clearTimeout(timer);
-    } else {
+  const performSearch = useCallback(async (searchQuery: string) => {
+    if (searchQuery.length < 2) {
       setResults({});
+      return;
     }
-  }, [query]);
 
-  const performSearch = (searchQuery: string) => {
-    const lowercaseQuery = searchQuery.toLowerCase();
-    
-    const filteredResults = {
-      trips: mockSearchData.trips.filter(trip => 
-        trip.route.toLowerCase().includes(lowercaseQuery) ||
-        trip.vehicle.toLowerCase().includes(lowercaseQuery) ||
-        trip.driver.toLowerCase().includes(lowercaseQuery) ||
-        trip.id.toLowerCase().includes(lowercaseQuery)
-      ),
-      passengers: mockSearchData.passengers.filter(passenger =>
-        passenger.name.toLowerCase().includes(lowercaseQuery) ||
-        passenger.phone.includes(searchQuery) ||
-        passenger.email.toLowerCase().includes(lowercaseQuery)
-      ),
-      vehicles: mockSearchData.vehicles.filter(vehicle =>
-        vehicle.registrationNumber.toLowerCase().includes(lowercaseQuery) ||
-        vehicle.make.toLowerCase().includes(lowercaseQuery) ||
-        vehicle.model.toLowerCase().includes(lowercaseQuery) ||
-        vehicle.station.toLowerCase().includes(lowercaseQuery)
-      ),
-      tickets: mockSearchData.tickets.filter(ticket =>
-        ticket.ticketNumber.toLowerCase().includes(lowercaseQuery) ||
-        ticket.passengerName.toLowerCase().includes(lowercaseQuery) ||
-        ticket.route.toLowerCase().includes(lowercaseQuery)
-      )
-    };
+    setIsSearching(true);
+    try {
+      const response = await searchApi.search(searchQuery);
+      if (response.success && response.data) {
+        setResults(normalizeSearchResults(response.data));
+      } else {
+        setResults({});
+      }
+    } catch (err) {
+      console.error('Search error:', err);
+      setResults({});
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
 
-    setResults(filteredResults);
-  };
+  useEffect(() => {
+    if (open) {
+      setQuery(initialQuery);
+      if (initialQuery.length >= 2) {
+        void performSearch(initialQuery);
+      } else {
+        setResults({});
+      }
+    }
+  }, [open, initialQuery, performSearch]);
+
+  useEffect(() => {
+    if (!open || query.length < 2) {
+      if (query.length < 2) setResults({});
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void performSearch(query);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query, open, performSearch]);
 
   const getStatusBadge = (status: string, type: 'trip' | 'vehicle' | 'ticket') => {
     const colors = {
@@ -186,7 +126,7 @@ export function SearchDialog({ open, onOpenChange, initialQuery = '' }: SearchDi
     };
 
     const colorClass = colors[type][status as keyof typeof colors[typeof type]] || 'bg-gray-100 text-gray-700';
-    
+
     return (
       <Badge className={colorClass}>
         {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -194,13 +134,22 @@ export function SearchDialog({ open, onOpenChange, initialQuery = '' }: SearchDi
     );
   };
 
-  const handleResultClick = (type: string, item: any) => {
+  const handleResultClick = (type: string, item: Record<string, unknown>) => {
     console.log(`Navigate to ${type}:`, item);
     onOpenChange(false);
-    // Here you would implement navigation to the specific item
   };
 
-  const ResultSection = ({ title, icon: Icon, items, type }: any) => {
+  const ResultSection = ({
+    title,
+    icon: Icon,
+    items,
+    type,
+  }: {
+    title: string;
+    icon: React.ComponentType<{ className?: string }>;
+    items?: Record<string, unknown>[];
+    type: 'trips' | 'passengers' | 'vehicles' | 'tickets';
+  }) => {
     if (!items || items.length === 0) return null;
 
     return (
@@ -210,31 +159,37 @@ export function SearchDialog({ open, onOpenChange, initialQuery = '' }: SearchDi
           {title} ({items.length})
         </div>
         <div className="space-y-1">
-          {items.map((item: any) => (
+          {items.map((item, index) => (
             <button
-              key={item.id}
+              key={String(item.id ?? index)}
               onClick={() => handleResultClick(type, item)}
               className="w-full text-left p-3 rounded-lg hover:bg-accent transition-colors"
             >
               {type === 'trips' && (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <p className="font-medium">{item.route}</p>
-                    {getStatusBadge(item.status, 'trip')}
+                    <p className="font-medium">{String(item.route ?? 'Unknown route')}</p>
+                    {item.status && getStatusBadge(String(item.status), 'trip')}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {new Date(item.departure).toLocaleDateString()}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {new Date(item.departure).toLocaleTimeString()}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Bus className="h-3 w-3" />
-                      {item.vehicle}
-                    </span>
+                    {item.departure && (
+                      <>
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(String(item.departure)).toLocaleDateString()}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {new Date(String(item.departure)).toLocaleTimeString()}
+                        </span>
+                      </>
+                    )}
+                    {item.vehicle && (
+                      <span className="flex items-center gap-1">
+                        <Bus className="h-3 w-3" />
+                        {String(item.vehicle)}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
@@ -242,36 +197,48 @@ export function SearchDialog({ open, onOpenChange, initialQuery = '' }: SearchDi
               {type === 'passengers' && (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <p className="font-medium">{item.name}</p>
-                    <Badge variant="outline">{item.totalTrips} trips</Badge>
+                    <p className="font-medium">{String(item.name ?? 'Unknown')}</p>
+                    {item.totalTrips != null && (
+                      <Badge variant="outline">{String(item.totalTrips)} trips</Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Phone className="h-3 w-3" />
-                      {item.phone}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Mail className="h-3 w-3" />
-                      {item.email}
-                    </span>
+                    {item.phone && (
+                      <span className="flex items-center gap-1">
+                        <Phone className="h-3 w-3" />
+                        {String(item.phone)}
+                      </span>
+                    )}
+                    {item.email && (
+                      <span className="flex items-center gap-1">
+                        <Mail className="h-3 w-3" />
+                        {String(item.email)}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-sm text-muted-foreground">Last trip: {item.lastTrip}</p>
+                  {item.lastTrip && (
+                    <p className="text-sm text-muted-foreground">Last trip: {String(item.lastTrip)}</p>
+                  )}
                 </div>
               )}
 
               {type === 'vehicles' && (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <p className="font-medium">{item.registrationNumber}</p>
-                    {getStatusBadge(item.status, 'vehicle')}
+                    <p className="font-medium">{String(item.registrationNumber ?? item.id ?? 'Unknown')}</p>
+                    {item.status && getStatusBadge(String(item.status), 'vehicle')}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>{item.make} {item.model}</span>
-                    <span>Capacity: {item.capacity}</span>
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
-                      {item.station}
-                    </span>
+                    {(item.make || item.model) && (
+                      <span>{String(item.make ?? '')} {String(item.model ?? '')}</span>
+                    )}
+                    {item.capacity != null && <span>Capacity: {String(item.capacity)}</span>}
+                    {item.station && (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        {String(item.station ?? item.stationName ?? '')}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
@@ -279,16 +246,18 @@ export function SearchDialog({ open, onOpenChange, initialQuery = '' }: SearchDi
               {type === 'tickets' && (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <p className="font-medium">{item.ticketNumber}</p>
-                    {getStatusBadge(item.status, 'ticket')}
+                    <p className="font-medium">{String(item.ticketNumber ?? item.id ?? 'Unknown')}</p>
+                    {item.status && getStatusBadge(String(item.status), 'ticket')}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>{item.passengerName}</span>
-                    <span>{item.route}</span>
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {item.date}
-                    </span>
+                    {item.passengerName && <span>{String(item.passengerName)}</span>}
+                    {item.route && <span>{String(item.route)}</span>}
+                    {item.date && (
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {String(item.date)}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
@@ -299,7 +268,11 @@ export function SearchDialog({ open, onOpenChange, initialQuery = '' }: SearchDi
     );
   };
 
-  const totalResults = Object.values(results).reduce((total: number, items: any) => total + (items?.length || 0), 0);
+  const totalResults =
+    (results.trips?.length ?? 0) +
+    (results.passengers?.length ?? 0) +
+    (results.vehicles?.length ?? 0) +
+    (results.tickets?.length ?? 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -339,43 +312,27 @@ export function SearchDialog({ open, onOpenChange, initialQuery = '' }: SearchDi
                 <div className="space-y-6">
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      Found {totalResults} result{totalResults !== 1 ? 's' : ''} for "{query}"
+                      Found {totalResults} result{totalResults !== 1 ? 's' : ''} for &quot;{query}&quot;
                     </p>
                   </div>
 
-                  <ResultSection
-                    title="Trips"
-                    icon={Route}
-                    items={results.trips}
-                    type="trips"
-                  />
+                  <ResultSection title="Trips" icon={Route} items={results.trips} type="trips" />
 
-                  {results.trips?.length > 0 && results.passengers?.length > 0 && <Separator />}
+                  {(results.trips?.length ?? 0) > 0 && (results.passengers?.length ?? 0) > 0 && <Separator />}
 
-                  <ResultSection
-                    title="Passengers"
-                    icon={Users}
-                    items={results.passengers}
-                    type="passengers"
-                  />
+                  <ResultSection title="Passengers" icon={Users} items={results.passengers} type="passengers" />
 
-                  {(results.trips?.length > 0 || results.passengers?.length > 0) && results.vehicles?.length > 0 && <Separator />}
+                  {((results.trips?.length ?? 0) > 0 || (results.passengers?.length ?? 0) > 0) &&
+                    (results.vehicles?.length ?? 0) > 0 && <Separator />}
 
-                  <ResultSection
-                    title="Vehicles"
-                    icon={Bus}
-                    items={results.vehicles}
-                    type="vehicles"
-                  />
+                  <ResultSection title="Vehicles" icon={Bus} items={results.vehicles} type="vehicles" />
 
-                  {(results.trips?.length > 0 || results.passengers?.length > 0 || results.vehicles?.length > 0) && results.tickets?.length > 0 && <Separator />}
+                  {((results.trips?.length ?? 0) > 0 ||
+                    (results.passengers?.length ?? 0) > 0 ||
+                    (results.vehicles?.length ?? 0) > 0) &&
+                    (results.tickets?.length ?? 0) > 0 && <Separator />}
 
-                  <ResultSection
-                    title="Tickets"
-                    icon={Ticket}
-                    items={results.tickets}
-                    type="tickets"
-                  />
+                  <ResultSection title="Tickets" icon={Ticket} items={results.tickets} type="tickets" />
                 </div>
               ) : (
                 <div className="text-center py-8">
@@ -389,7 +346,7 @@ export function SearchDialog({ open, onOpenChange, initialQuery = '' }: SearchDi
             </ScrollArea>
           )}
 
-          {query.length < 2 && (
+          {query.length < 2 && !isSearching && (
             <div className="text-center py-8">
               <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="font-medium">Start typing to search</p>

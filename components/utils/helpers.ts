@@ -1,5 +1,5 @@
 import { Badge } from '../ui/badge';
-import { statusOptions } from '../constants/mockData';
+import { statusOptions } from '../constants/statusOptions';
 
 export const formatCurrency = (amount: number): string => {
   return `₵${amount.toLocaleString()}`;
@@ -16,6 +16,19 @@ export const formatDateTime = (dateString: string): string => {
 export const generateId = (prefix: string, currentLength: number): string => {
   return `${prefix}${String(currentLength + 1).padStart(3, '0')}`;
 };
+
+/** Parse RISE user ids (USR001) or numeric strings for API numeric fields */
+export function parseRiseNumericId(
+  id: string | number | undefined | null
+): number | undefined {
+  if (id === undefined || id === null || id === '') return undefined;
+  if (typeof id === 'number' && !Number.isNaN(id)) return id;
+  const trimmed = String(id).trim();
+  if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10);
+  const match = trimmed.toUpperCase().match(/^USR(\d+)$/);
+  if (match) return parseInt(match[1], 10);
+  return undefined;
+}
 
 export const getStatusInfo = (status: string, type: 'trip' | 'vehicle' | 'driver' | 'station' | 'incident' | 'deathTrap' = 'trip') => {
   // statusOptions is an object with categorized arrays
@@ -63,9 +76,9 @@ export const getStatusBadgeClass = (status: string): string => {
     case 'yellow':
       return 'bg-yellow-100 text-yellow-800';
     case 'blue':
-      return 'bg-blue-100 text-blue-800';
+      return 'bg-[#193cb8]/10 text-[#193cb8]';
     case 'purple':
-      return 'bg-purple-100 text-purple-800';
+      return 'bg-[#193cb8]/10 text-[#193cb8]';
     case 'orange':
       return 'bg-orange-100 text-orange-800';
     default:
@@ -79,20 +92,51 @@ export const getRoleBadgeClass = (role: string): string => {
     case 'super_admin':
       return 'bg-red-100 text-red-800';
     case 'admin':
-      return 'bg-purple-100 text-purple-800';
+      return 'bg-[#193cb8]/10 text-[#193cb8]';
     case 'regional_manager':
-      return 'bg-blue-100 text-blue-800';
+      return 'bg-[#193cb8]/10 text-[#193cb8]';
     case 'district_manager':
       return 'bg-green-100 text-green-800';
     case 'admin_operation':
-      return 'bg-indigo-100 text-indigo-800';
+      return 'bg-[#193cb8]/10 text-[#193cb8]';
     case 'admin_hrm':
       return 'bg-pink-100 text-pink-800';
     case 'district_incident_reporter':
       return 'bg-yellow-100 text-yellow-800';
+    case 'station_manager':
+      return 'bg-teal-100 text-teal-800';
     case 'station_worker':
       return 'bg-gray-100 text-gray-800';
     default:
       return 'bg-gray-100 text-gray-800';
   }
 };
+
+function escapeCsvCell(value: unknown): string {
+  const text = value == null ? '' : String(value);
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+/** Download rows as a UTF-8 CSV file in the browser. */
+export function downloadCsv(
+  filename: string,
+  headers: string[],
+  rows: unknown[][]
+): void {
+  const lines = [
+    headers.map(escapeCsvCell).join(','),
+    ...rows.map((row) => row.map(escapeCsvCell).join(',')),
+  ];
+  const blob = new Blob([`\uFEFF${lines.join('\n')}`], {
+    type: 'text/csv;charset=utf-8;',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,17 +9,78 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Plus, Edit2, FileText, DollarSign, Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
-import { mockIncidentClaims, mockIncidents, IncidentClaim } from './constants/mockData';
-import { toast } from 'sonner';
+import {
+  Plus,
+  Edit2,
+  FileText,
+  DollarSign,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  ChevronsUpDown,
+  Check,
+} from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from './ui/command';
+import { cn } from './ui/utils';
+import { incidentApi, incidentClaimApi } from './utils/api';
+import { parseListResponse } from './utils/api/client';
+import { useEntityList } from './shared/hooks/useEntityList';
+import { notify } from './utils/notify';
+
+interface IncidentOption {
+  id: string;
+  location: string;
+}
+
+interface IncidentClaim {
+  id: string;
+  incidentId: string;
+  claimantName: string;
+  claimantPhone: string;
+  claimantId: string;
+  injuryType: 'minor' | 'moderate' | 'severe';
+  compensationAmount: number;
+  description: string;
+  medicalReports: string[];
+  status: 'pending' | 'approved' | 'rejected' | 'paid';
+  submittedAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  paymentDate?: string;
+}
 
 export function IncidentClaims() {
-  const [claims, setClaims] = useState<IncidentClaim[]>(mockIncidentClaims);
+  const fetchClaims = useCallback(() => incidentClaimApi.getAll(), []);
+  const {
+    items: claims,
+    loading,
+    error,
+    refresh,
+    isSubmitting,
+    setIsSubmitting,
+  } = useEntityList<IncidentClaim>({
+    fetchFn: fetchClaims,
+    entityKey: 'claims',
+    errorMessage: 'Failed to load incident claims',
+  });
+
+  const [incidents, setIncidents] = useState<IncidentOption[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedClaim, setSelectedClaim] = useState<IncidentClaim | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  const [openIncidentCombobox, setOpenIncidentCombobox] = useState(false);
 
   const [formData, setFormData] = useState({
     incidentId: '',
@@ -26,9 +88,10 @@ export function IncidentClaims() {
     claimantPhone: '',
     claimantId: '',
     injuryType: 'minor' as 'minor' | 'moderate' | 'severe',
-    compensationAmount: 0,
+    /** String so the amount field can be edited without forcing 0 while typing */
+    compensationAmount: '200',
     description: '',
-    medicalReports: [] as string[]
+    medicalReports: [] as string[],
   });
 
   const injuryCompensation = {
@@ -36,6 +99,33 @@ export function IncidentClaims() {
     moderate: { min: 1000, max: 5000, description: 'Moderate injuries (fractures, sprains, significant trauma)' },
     severe: { min: 5000, max: 20000, description: 'Severe injuries (major fractures, head injuries, permanent damage)' }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchIncidents() {
+      const response = await incidentApi.getAll();
+      if (cancelled || !response.success || response.data === undefined) return;
+
+      const incidentList = parseListResponse<{ id: string; location: string; title?: string }>(
+        response.data,
+        'incidents'
+      );
+
+      setIncidents(
+        incidentList.map((incident) => ({
+          id: incident.id,
+          location: incident.location || incident.title || incident.id,
+        }))
+      );
+    }
+
+    fetchIncidents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredClaims = claims.filter(claim => {
     const matchesSearch = 
@@ -55,61 +145,76 @@ export function IncidentClaims() {
       claimantPhone: '',
       claimantId: '',
       injuryType: 'minor',
-      compensationAmount: 0,
+      compensationAmount: String(injuryCompensation.minor.min),
       description: '',
-      medicalReports: []
+      medicalReports: [],
     });
   };
 
   const handleInjuryTypeChange = (injuryType: 'minor' | 'moderate' | 'severe') => {
     const compensation = injuryCompensation[injuryType];
-    setFormData({
-      ...formData,
+    setFormData((prev) => ({
+      ...prev,
       injuryType,
-      compensationAmount: compensation.min
-    });
+      compensationAmount: String(compensation.min),
+    }));
   };
 
-  const handleAdd = () => {
+  const parseCompensationAmount = (): number | null => {
+    const trimmed = formData.compensationAmount.trim();
+    if (!trimmed) return null;
+    const amount = Number(trimmed);
+    if (!Number.isFinite(amount)) return null;
+    return amount;
+  };
+
+  const handleAdd = async () => {
     if (!formData.incidentId || !formData.claimantName || !formData.claimantPhone) {
-      toast.error('Please fill in all required fields');
+      notify.error('Please fill in all required fields');
       return;
     }
 
-    const newClaim: IncidentClaim = {
-      id: `IC${String(claims.length + 1).padStart(3, '0')}`,
-      ...formData,
-      status: 'pending',
-      submittedAt: new Date().toISOString()
-    };
+    const compensationAmount = parseCompensationAmount();
+    if (compensationAmount === null || compensationAmount <= 0) {
+      notify.error('Enter a valid compensation amount');
+      return;
+    }
 
-    setClaims([...claims, newClaim]);
-    toast.success('Incident claim submitted successfully');
-    setIsAddDialogOpen(false);
-    resetForm();
+    const range = injuryCompensation[formData.injuryType];
+    if (compensationAmount < range.min || compensationAmount > range.max) {
+      notify.error(`Compensation must be between GH₵${range.min} and GH₵${range.max} for ${formData.injuryType} injuries`);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await incidentClaimApi.create({
+        ...formData,
+        compensationAmount,
+      });
+
+      if (response.success) {
+        notify.success('Incident claim submitted successfully');
+        setIsAddDialogOpen(false);
+        resetForm();
+        await refresh();
+      } else {
+        notify.error(response.error || 'Failed to submit claim');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleStatusUpdate = (claimId: string, newStatus: 'approved' | 'rejected' | 'paid') => {
-    const updatedClaims = claims.map(claim => {
-      if (claim.id === claimId) {
-        const updates: Partial<IncidentClaim> = { status: newStatus };
-        
-        if (newStatus === 'approved' || newStatus === 'rejected') {
-          updates.reviewedBy = 'admin';
-          updates.reviewedAt = new Date().toISOString();
-        }
-        
-        if (newStatus === 'paid') {
-          updates.paymentDate = new Date().toISOString();
-        }
-        
-        return { ...claim, ...updates };
-      }
-      return claim;
-    });
+  const handleStatusUpdate = async (claimId: string, newStatus: 'approved' | 'rejected' | 'paid') => {
+    const response = await incidentClaimApi.updateStatus(claimId, { status: newStatus });
 
-    setClaims(updatedClaims);
-    toast.success(`Claim ${newStatus} successfully`);
+    if (response.success) {
+      notify.success(`Claim ${newStatus} successfully`);
+      await refresh();
+    } else {
+      notify.error(response.error || 'Failed to update claim status');
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -136,8 +241,34 @@ export function IncidentClaims() {
   const pendingClaims = claims.filter(c => c.status === 'pending').length;
   const approvedClaims = claims.filter(c => c.status === 'approved').length;
   const totalCompensation = claims
-    .filter(c => c.status === 'paid')
-    .reduce((sum, c) => sum + c.compensationAmount, 0);
+    .filter((c) => c.status === 'paid')
+    .reduce((sum, c) => sum + Number(c.compensationAmount) || 0, 0);
+
+  const selectedIncident = incidents.find((i) => i.id === formData.incidentId);
+  const compensationRange = injuryCompensation[formData.injuryType];
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center py-24">
+        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center py-24 text-center">
+        <p className="text-sm text-muted-foreground mb-4">{error}</p>
+        <button
+          type="button"
+          onClick={() => refresh({ toastOnError: true })}
+          className="text-sm font-medium text-[#193cb8] hover:underline"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -164,18 +295,55 @@ export function IncidentClaims() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="incidentId">Incident ID *</Label>
-                  <Select value={formData.incidentId} onValueChange={(value) => setFormData({ ...formData, incidentId: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select incident" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {mockIncidents.map(incident => (
-                        <SelectItem key={incident.id} value={incident.id}>
-                          {incident.id} - {incident.location}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover modal open={openIncidentCombobox} onOpenChange={setOpenIncidentCombobox}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="incidentId"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={openIncidentCombobox}
+                        className="w-full justify-between font-normal"
+                      >
+                        {selectedIncident ? (
+                          <span className="truncate">
+                            {selectedIncident.id} — {selectedIncident.location}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Search incident ID or location…</span>
+                        )}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search by incident ID or location…" />
+                        <CommandList>
+                          <CommandEmpty>No incident found.</CommandEmpty>
+                          <CommandGroup>
+                            {incidents.map((incident) => (
+                              <CommandItem
+                                key={incident.id}
+                                value={`${incident.id} ${incident.location}`}
+                                onSelect={() => {
+                                  setFormData((prev) => ({ ...prev, incidentId: incident.id }));
+                                  setOpenIncidentCombobox(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    'mr-2 h-4 w-4 shrink-0',
+                                    formData.incidentId === incident.id ? 'opacity-100' : 'opacity-0'
+                                  )}
+                                />
+                                <span className="font-medium">{incident.id}</span>
+                                <span className="text-muted-foreground truncate"> — {incident.location}</span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="claimantName">Claimant Name *</Label>
@@ -238,13 +406,19 @@ export function IncidentClaims() {
                 <Input
                   id="compensationAmount"
                   type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min={compensationRange.min}
+                  max={compensationRange.max}
                   value={formData.compensationAmount}
-                  onChange={(e) => setFormData({ ...formData, compensationAmount: parseFloat(e.target.value) || 0 })}
-                  min={injuryCompensation[formData.injuryType].min}
-                  max={injuryCompensation[formData.injuryType].max}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, compensationAmount: e.target.value }))
+                  }
+                  placeholder={`${compensationRange.min} – ${compensationRange.max}`}
                 />
                 <p className="text-sm text-muted-foreground">
-                  Recommended range: GH₵{injuryCompensation[formData.injuryType].min} - GH₵{injuryCompensation[formData.injuryType].max}
+                  Allowed range for {formData.injuryType} injuries: GH₵{compensationRange.min} – GH₵
+                  {compensationRange.max}
                 </p>
               </div>
 
@@ -263,8 +437,15 @@ export function IncidentClaims() {
               <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleAdd}>
-                Submit Claim
+              <Button onClick={() => void handleAdd()} disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Submitting…
+                  </>
+                ) : (
+                  'Submit Claim'
+                )}
               </Button>
             </div>
           </DialogContent>
@@ -303,7 +484,7 @@ export function IncidentClaims() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle>Total Paid</CardTitle>
-            <DollarSign className="h-4 w-4 text-blue-600" />
+            <DollarSign className="h-4 w-4 text-[#193cb8]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">GH₵{totalCompensation.toLocaleString()}</div>
@@ -368,7 +549,7 @@ export function IncidentClaims() {
                       {claim.injuryType}
                     </Badge>
                   </TableCell>
-                  <TableCell>GH₵{claim.compensationAmount.toLocaleString()}</TableCell>
+                  <TableCell>GH₵{Number(claim.compensationAmount).toLocaleString()}</TableCell>
                   <TableCell>
                     <Badge variant="outline" style={{ color: getStatusColor(claim.status) }}>
                       <span className="flex items-center">
@@ -417,7 +598,7 @@ export function IncidentClaims() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleStatusUpdate(claim.id, 'paid')}
-                          className="text-blue-600"
+                          className="text-[#193cb8]"
                         >
                           <DollarSign className="h-4 w-4" />
                         </Button>
@@ -453,7 +634,7 @@ export function IncidentClaims() {
                   <div className="mt-2 space-y-1">
                     <p><strong>Incident:</strong> {selectedClaim.incidentId}</p>
                     <p><strong>Injury Type:</strong> {selectedClaim.injuryType}</p>
-                    <p><strong>Amount:</strong> GH₵{selectedClaim.compensationAmount.toLocaleString()}</p>
+                    <p><strong>Amount:</strong> GH₵{Number(selectedClaim.compensationAmount).toLocaleString()}</p>
                   </div>
                 </div>
               </div>

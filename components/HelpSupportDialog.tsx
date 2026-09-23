@@ -42,7 +42,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { ScrollArea } from './ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
-import { toast } from 'sonner';
+import { notify } from './utils/notify';
 
 interface HelpSupportDialogProps {
   open: boolean;
@@ -148,13 +148,13 @@ export function HelpSupportDialog({ open, onOpenChange }: HelpSupportDialogProps
 
   const handleSupportSubmit = () => {
     if (!supportForm.category || !supportForm.subject || !supportForm.description) {
-      toast.error('Please fill in all required fields');
+      notify.error('Please fill in all required fields');
       return;
     }
 
     // Simulate API call
     setTimeout(() => {
-      toast.success('Support ticket submitted successfully. We\'ll get back to you soon!');
+      notify.success('Support ticket submitted successfully. We\'ll get back to you soon!');
       setSupportForm({
         category: '',
         subject: '',
@@ -165,12 +165,12 @@ export function HelpSupportDialog({ open, onOpenChange }: HelpSupportDialogProps
   };
 
   const handleDownload = (guide: any) => {
-    toast.success(`Downloading ${guide.title}...`);
+    notify.success(`Downloading ${guide.title}...`);
     // Simulate download
   };
 
   const handleVideoPlay = (video: any) => {
-    toast.info(`Opening ${video.title}...`);
+    notify.info(`Opening ${video.title}...`);
     // Here you would open the video or navigate to video page
   };
 

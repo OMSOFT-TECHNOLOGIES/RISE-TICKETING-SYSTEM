@@ -1,17 +1,16 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Button } from './ui/button';
-import { 
-  AlertTriangle, 
-  CheckCircle, 
-  Info, 
-  X, 
-  Bell,
-  AlertCircle
+import { notify } from './utils/notify';
+import { notificationApi, getAuthToken } from './utils/api';
+import {
+  AlertTriangle,
+  CheckCircle,
+  Info,
+  X,
+  AlertCircle,
 } from 'lucide-react';
 
-// Types for notifications and alerts
 interface SystemAlert {
   id: string;
   type: 'info' | 'warning' | 'error' | 'success';
@@ -22,14 +21,88 @@ interface SystemAlert {
   persistent: boolean;
 }
 
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  read: boolean;
+  type: 'booking' | 'maintenance' | 'complaint' | 'payment' | 'system' | 'info';
+  timestamp: Date;
+}
+
 interface NotificationContextType {
   alerts: SystemAlert[];
+  notifications: AppNotification[];
+  unreadCount: number;
   addAlert: (alert: Omit<SystemAlert, 'id' | 'timestamp'>) => void;
   removeAlert: (id: string) => void;
-  showToast: (type: 'success' | 'error' | 'info' | 'warning', message: string, description?: string) => void;
+  addNotification: (notification: Omit<AppNotification, 'id' | 'time' | 'read' | 'timestamp'>) => void;
+  markNotificationAsRead: (id: string) => void;
+  markAllNotificationsAsRead: () => void;
+  showToast: (
+    type: 'success' | 'error' | 'info' | 'warning',
+    message: string,
+    description?: string
+  ) => void;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+
+const DISMISSED_ALERTS_KEY = 'rise-dismissed-alerts';
+
+function formatRelativeTime(date: Date): string {
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+}
+
+function mapNotification(item: Record<string, unknown>): AppNotification {
+  const timestamp = new Date(String(item.timestamp ?? item.createdAt ?? Date.now()));
+  const type = String(item.type ?? 'info') as AppNotification['type'];
+
+  return {
+    id: String(item.id ?? Date.now()),
+    title: String(item.title ?? 'Notification'),
+    message: String(item.message ?? item.body ?? ''),
+    type: ['booking', 'maintenance', 'complaint', 'payment', 'system', 'info'].includes(type)
+      ? type
+      : 'info',
+    read: Boolean(item.read ?? item.isRead ?? false),
+    timestamp,
+    time: formatRelativeTime(timestamp),
+  };
+}
+
+function mapAlert(item: Record<string, unknown>): SystemAlert {
+  const type = String(item.type ?? 'info') as SystemAlert['type'];
+
+  return {
+    id: String(item.id ?? Date.now()),
+    type: ['info', 'warning', 'error', 'success'].includes(type) ? type : 'info',
+    title: String(item.title ?? 'System Alert'),
+    message: String(item.message ?? item.body ?? ''),
+    timestamp: new Date(String(item.timestamp ?? item.createdAt ?? Date.now())),
+    dismissible: item.dismissible !== false,
+    persistent: Boolean(item.persistent ?? false),
+  };
+}
+
+function loadDismissedAlertIds(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(DISMISSED_ALERTS_KEY) || '[]') as string[];
+  } catch {
+    return [];
+  }
+}
 
 export function useNotifications() {
   const context = useContext(NotificationContext);
@@ -39,97 +112,180 @@ export function useNotifications() {
   return context;
 }
 
-// Mock system alerts for demonstration
-const mockSystemAlerts: SystemAlert[] = [
-  {
-    id: '1',
-    type: 'warning',
-    title: 'System Maintenance Scheduled',
-    message: 'RISE system will undergo maintenance on Sunday, 2:00 AM - 4:00 AM GMT. Some features may be unavailable.',
-    timestamp: new Date(),
-    dismissible: true,
-    persistent: true
-  },
-  {
-    id: '2',
-    type: 'info',
-    title: 'New Feature Available',
-    message: 'Real-time GPS tracking for vehicles is now available in the vehicle management section.',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-    dismissible: true,
-    persistent: false
-  }
-];
-
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
-  const [alerts, setAlerts] = useState<SystemAlert[]>(mockSystemAlerts);
+  const [alerts, setAlerts] = useState<SystemAlert[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
-  const addAlert = (alertData: Omit<SystemAlert, 'id' | 'timestamp'>) => {
+  const unreadCount = notifications.filter((notification) => !notification.read).length;
+
+  const fetchNotificationsAndAlerts = useCallback(async () => {
+    if (!getAuthToken()) return;
+
+    try {
+      const [notificationsRes, alertsRes] = await Promise.all([
+        notificationApi.getAll({ limit: 50 }),
+        notificationApi.getAlerts(),
+      ]);
+
+      if (notificationsRes.success && notificationsRes.data) {
+        const items = Array.isArray(notificationsRes.data)
+          ? notificationsRes.data
+          : (notificationsRes.data as { notifications?: unknown[] }).notifications ?? [];
+        setNotifications((items as Record<string, unknown>[]).map(mapNotification));
+      }
+
+      if (alertsRes.success && alertsRes.data) {
+        const dismissed = loadDismissedAlertIds();
+        const items = Array.isArray(alertsRes.data)
+          ? alertsRes.data
+          : (alertsRes.data as { alerts?: unknown[] }).alerts ?? [];
+        setAlerts(
+          (items as Record<string, unknown>[])
+            .map(mapAlert)
+            .filter((alert) => !dismissed.includes(alert.id))
+        );
+      }
+    } catch (err) {
+      console.error('Failed to load notifications:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchNotificationsAndAlerts();
+  }, [fetchNotificationsAndAlerts]);
+
+  const addAlert = useCallback((alertData: Omit<SystemAlert, 'id' | 'timestamp'>) => {
     const newAlert: SystemAlert = {
       ...alertData,
       id: Date.now().toString(),
-      timestamp: new Date()
+      timestamp: new Date(),
     };
-    setAlerts(prev => [newAlert, ...prev]);
-  };
+    setAlerts((prev) => [newAlert, ...prev]);
+  }, []);
 
-  const removeAlert = (id: string) => {
-    setAlerts(prev => prev.filter(alert => alert.id !== id));
-  };
+  const removeAlert = useCallback(async (id: string) => {
+    setAlerts((prev) => prev.filter((alert) => alert.id !== id));
 
-  const showToast = (type: 'success' | 'error' | 'info' | 'warning', message: string, description?: string) => {
     try {
-      const toastConfig = {
-        description,
-        duration: type === 'error' ? 6000 : 4000,
+      const dismissed = loadDismissedAlertIds();
+      if (!dismissed.includes(id)) {
+        localStorage.setItem(DISMISSED_ALERTS_KEY, JSON.stringify([...dismissed, id]));
+      }
+      await notificationApi.dismissAlert(id);
+    } catch (err) {
+      console.error('Failed to dismiss alert:', err);
+    }
+  }, []);
+
+  const addNotification = useCallback(
+    (notification: Omit<AppNotification, 'id' | 'time' | 'read' | 'timestamp'>) => {
+      const timestamp = new Date();
+      const newNotification: AppNotification = {
+        ...notification,
+        id: Date.now().toString(),
+        timestamp,
+        time: formatRelativeTime(timestamp),
+        read: false,
       };
+
+      setNotifications((prev) => [newNotification, ...prev]);
+    },
+    []
+  );
+
+  const markNotificationAsRead = useCallback(async (id: string) => {
+    setNotifications((prev) =>
+      prev.map((notification) =>
+        notification.id === id ? { ...notification, read: true } : notification
+      )
+    );
+
+    try {
+      await notificationApi.markRead(id);
+    } catch (err) {
+      console.error('Failed to mark notification as read:', err);
+    }
+  }, []);
+
+  const markAllNotificationsAsRead = useCallback(async () => {
+    setNotifications((prev) => prev.map((notification) => ({ ...notification, read: true })));
+
+    try {
+      await notificationApi.markAllRead();
+    } catch (err) {
+      console.error('Failed to mark all notifications as read:', err);
+    }
+  }, []);
+
+  const showToast = useCallback(
+    (
+      type: 'success' | 'error' | 'info' | 'warning',
+      message: string,
+      description?: string
+    ) => {
+      const options = description ? { description } : undefined;
 
       switch (type) {
         case 'success':
-          toast.success(message, toastConfig);
+          notify.success(message, options);
           break;
         case 'error':
-          toast.error(message, toastConfig);
+          notify.error(message, options);
           break;
         case 'warning':
-          toast.warning(message, toastConfig);
+          notify.warning(message, options);
           break;
         case 'info':
         default:
-          toast.info(message, toastConfig);
+          notify.info(message, options);
           break;
       }
-    } catch (error) {
-      console.warn('Toast notification failed:', error);
-      // Fallback to simple alert if toast fails
-      alert(`${type.toUpperCase()}: ${message}`);
-    }
-  };
+    },
+    []
+  );
 
-  // Auto-remove non-persistent alerts after 24 hours
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
-      setAlerts(prev => 
-        prev.filter(alert => {
+      setAlerts((prev) =>
+        prev.filter((alert) => {
           if (alert.persistent) return true;
-          const hoursSinceCreated = (now.getTime() - alert.timestamp.getTime()) / (1000 * 60 * 60);
+          const hoursSinceCreated =
+            (now.getTime() - alert.timestamp.getTime()) / (1000 * 60 * 60);
           return hoursSinceCreated < 24;
         })
       );
-    }, 60 * 60 * 1000); // Check every hour
+
+      setNotifications((prev) =>
+        prev.map((notification) => ({
+          ...notification,
+          time: formatRelativeTime(notification.timestamp),
+        }))
+      );
+    }, 60 * 1000);
 
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <NotificationContext.Provider value={{ alerts, addAlert, removeAlert, showToast }}>
+    <NotificationContext.Provider
+      value={{
+        alerts,
+        notifications,
+        unreadCount,
+        addAlert,
+        removeAlert,
+        addNotification,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        showToast,
+      }}
+    >
       {children}
     </NotificationContext.Provider>
   );
 }
 
-// System-wide alert banner component
 export function SystemAlerts() {
   const { alerts, removeAlert } = useNotifications();
 
@@ -152,7 +308,6 @@ export function SystemAlerts() {
       case 'error':
         return 'destructive';
       case 'warning':
-        return 'default'; // Will be styled as warning
       case 'success':
       case 'info':
       default:
@@ -165,13 +320,17 @@ export function SystemAlerts() {
   return (
     <div className="space-y-2 p-4 bg-background border-b">
       {alerts.map((alert) => (
-        <Alert 
-          key={alert.id} 
+        <Alert
+          key={alert.id}
           variant={getAlertVariant(alert.type)}
           className={`${
-            alert.type === 'warning' ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950' :
-            alert.type === 'success' ? 'border-green-500 bg-green-50 dark:bg-green-950' :
-            alert.type === 'info' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950' : ''
+            alert.type === 'warning'
+              ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950'
+              : alert.type === 'success'
+                ? 'border-green-500 bg-green-50 dark:bg-green-950'
+                : alert.type === 'info'
+                  ? 'border-[#193cb8] bg-blue-50 dark:bg-blue-950'
+                  : ''
           }`}
         >
           {getAlertIcon(alert.type)}
@@ -196,55 +355,6 @@ export function SystemAlerts() {
           </div>
         </Alert>
       ))}
-    </div>
-  );
-}
-
-// Demo notification triggers (for testing)
-export function NotificationDemo() {
-  const { showToast, addAlert } = useNotifications();
-
-  const triggerToast = (type: 'success' | 'error' | 'info' | 'warning') => {
-    const messages = {
-      success: 'Operation completed successfully!',
-      error: 'An error occurred while processing your request.',
-      info: 'Here is some important information for you.',
-      warning: 'Please be aware of this potential issue.'
-    };
-    
-    showToast(type, messages[type], 'This is a demo notification.');
-  };
-
-  const triggerAlert = () => {
-    addAlert({
-      type: 'info',
-      title: 'Demo Alert',
-      message: 'This is a demo system alert that appears at the top of the page.',
-      dismissible: true,
-      persistent: false
-    });
-  };
-
-  return (
-    <div className="p-4 border rounded-lg space-y-2">
-      <h3 className="font-medium">Notification Demo</h3>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => triggerToast('success')}>
-          Success Toast
-        </Button>
-        <Button size="sm" onClick={() => triggerToast('error')} variant="destructive">
-          Error Toast
-        </Button>
-        <Button size="sm" onClick={() => triggerToast('warning')} variant="outline">
-          Warning Toast
-        </Button>
-        <Button size="sm" onClick={() => triggerToast('info')} variant="secondary">
-          Info Toast
-        </Button>
-        <Button size="sm" onClick={triggerAlert} variant="outline">
-          System Alert
-        </Button>
-      </div>
     </div>
   );
 }

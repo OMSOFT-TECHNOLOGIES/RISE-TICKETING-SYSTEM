@@ -1,20 +1,41 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Textarea } from './ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Plus, MapPin, AlertTriangle, Clock, CheckCircle, Eye, Camera, Wrench, RotateCcw } from 'lucide-react';
-import { mockDeathTraps, DeathTrapReport } from './constants/mockData';
-import { MapLocationPicker } from './MapLocationPicker';
-import { toast } from 'sonner';
+import { Plus, MapPin, AlertTriangle, Clock, CheckCircle, Eye, Wrench } from 'lucide-react';
+import type { DeathTrapReport } from './DeathTrapReporting/types';
+import { deathTrapApi } from './utils/api';
+import { useEntityList } from './shared/hooks/useEntityList';
+import { notify } from './utils/notify';
+import {
+  calculatePriorityScore,
+  DEFAULT_HAZARD_FORM,
+  HAZARD_TYPE_OPTIONS,
+  SEVERITY_OPTIONS,
+} from './DeathTrapReporting/constants';
+import { ReportHazardDialog, type HazardReportForm } from './DeathTrapReporting/ReportHazardDialog';
 
 export function DeathTrapReporting() {
-  const [reports, setReports] = useState<DeathTrapReport[]>(mockDeathTraps);
+  const fetchReports = useCallback(() => deathTrapApi.getAll(), []);
+  const {
+    items: reports,
+    loading,
+    error,
+    refresh,
+    isSubmitting,
+    setIsSubmitting,
+  } = useEntityList<DeathTrapReport>({
+    fetchFn: fetchReports,
+    entityKey: 'deathTraps',
+    errorMessage: 'Failed to load hazard reports',
+  });
+
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<DeathTrapReport | null>(null);
@@ -23,37 +44,10 @@ export function DeathTrapReporting() {
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [isLocationFromMap, setIsLocationFromMap] = useState(false);
 
-  const [formData, setFormData] = useState({
-    type: 'fatal_pothole' as DeathTrapReport['type'],
-    location: '',
-    description: '',
-    severityLevel: 'medium' as 'low' | 'medium' | 'high' | 'critical',
-    affectedRoutes: [] as string[],
-    estimatedRepairCost: 0,
-    coordinates: { lat: 0, lng: 0 },
-    locationAddress: ''
-  });
-
-  const deathTrapTypes = [
-    { value: 'faulty_vehicle', label: 'Faulty Vehicle', icon: '🚗' },
-    { value: 'broken_down_vehicle', label: 'Broken Down Vehicle', icon: '🚙' },
-    { value: 'fatal_pothole', label: 'Fatal Pothole', icon: '🕳️' },
-    { value: 'faulty_bridge', label: 'Faulty Bridge', icon: '🌉' },
-    { value: 'material_roadside', label: 'Material Along Roadside', icon: '🪨' },
-    { value: 'no_caution_sign', label: 'No Caution Sign', icon: '⚠️' },
-    { value: 'zebra_crossing_faded', label: 'Zebra Crossing Faded', icon: '🦓' },
-    { value: 'faulty_streetlight', label: 'Faulty Streetlight', icon: '💡' }
-  ];
-
-  const severityLevels = [
-    { value: 'low', label: 'Low', color: 'green', description: 'Minor hazard, low risk' },
-    { value: 'medium', label: 'Medium', color: 'yellow', description: 'Moderate hazard, caution needed' },
-    { value: 'high', label: 'High', color: 'orange', description: 'Significant hazard, immediate attention needed' },
-    { value: 'critical', label: 'Critical', color: 'red', description: 'Extreme hazard, urgent action required' }
-  ];
+  const [formData, setFormData] = useState<HazardReportForm>(DEFAULT_HAZARD_FORM);
 
   const statusOptions = [
-    { value: 'reported', label: 'Reported', color: 'blue' },
+    { value: 'reported', label: 'Reported', color: '#193cb8' },
     { value: 'acknowledged', label: 'Acknowledged', color: 'yellow' },
     { value: 'in_progress', label: 'In Progress', color: 'orange' },
     { value: 'resolved', label: 'Resolved', color: 'green' },
@@ -73,30 +67,14 @@ export function DeathTrapReporting() {
   });
 
   const resetForm = () => {
-    setFormData({
-      type: 'fatal_pothole',
-      location: '',
-      description: '',
-      severityLevel: 'medium',
-      affectedRoutes: [],
-      estimatedRepairCost: 0,
-      coordinates: { lat: 0, lng: 0 },
-      locationAddress: ''
-    });
+    setFormData(DEFAULT_HAZARD_FORM);
     setIsLocationFromMap(false);
   };
 
-  const calculatePriorityScore = (severity: string, routeCount: number): number => {
-    const severityScore = {
-      low: 25,
-      medium: 50,
-      high: 75,
-      critical: 100
-    }[severity] || 50;
-
-    const routeMultiplier = Math.min(routeCount * 10, 30);
-    return Math.min(severityScore + routeMultiplier, 100);
-  };
+  const priorityScore = useMemo(
+    () => calculatePriorityScore(formData.severityLevel, formData.affectedRoutes.length),
+    [formData.severityLevel, formData.affectedRoutes.length]
+  );
 
   const formatLocationFromMap = (location: { lat: number; lng: number; address?: string }): string => {
     if (location.address) {
@@ -111,92 +89,94 @@ export function DeathTrapReporting() {
 
   const handleLocationSelect = (location: { lat: number; lng: number; address?: string }) => {
     const formattedLocation = formatLocationFromMap(location);
-    
-    setFormData({
-      ...formData,
+
+    setFormData((prev) => ({
+      ...prev,
       coordinates: { lat: location.lat, lng: location.lng },
       locationAddress: location.address || '',
-      location: formattedLocation // Always update the location field with selected location
-    });
-    
+      location: formattedLocation,
+    }));
+
     setIsLocationFromMap(true);
-    toast.success('Location selected and description updated');
   };
 
-  const handleLocationInputChange = (value: string) => {
-    setFormData({ ...formData, location: value });
-    // If user manually edits the location, it's no longer purely from map
-    if (isLocationFromMap && value !== formData.location) {
-      setIsLocationFromMap(false);
-    }
+  const handleFormChange = (updates: Partial<HazardReportForm>) => {
+    setFormData((prev) => {
+      const next = { ...prev, ...updates };
+      if (updates.location !== undefined && isLocationFromMap && updates.location !== prev.location) {
+        setIsLocationFromMap(false);
+      }
+      return next;
+    });
   };
 
   const handleResetLocation = () => {
-    setFormData({
-      ...formData,
+    setFormData((prev) => ({
+      ...prev,
       location: '',
       coordinates: { lat: 0, lng: 0 },
-      locationAddress: ''
-    });
+      locationAddress: '',
+    }));
     setIsLocationFromMap(false);
-    toast.info('Location cleared');
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!formData.location || !formData.description) {
-      toast.error('Please fill in all required fields');
+      notify.error('Please fill in all required fields');
       return;
     }
 
     if (formData.coordinates.lat === 0 && formData.coordinates.lng === 0) {
-      toast.error('Please select a location on the map');
+      notify.error('Please select a location on the map');
       return;
     }
 
-    const priorityScore = calculatePriorityScore(formData.severityLevel, formData.affectedRoutes.length);
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        type: formData.type,
+        location: formData.location,
+        description: formData.description,
+        severityLevel: formData.severityLevel,
+        affectedRoutes: formData.affectedRoutes,
+        estimatedRepairCost: formData.estimatedRepairCost,
+        coordinates: formData.coordinates,
+      };
 
-    const newReport: DeathTrapReport = {
-      id: `DT${String(reports.length + 1).padStart(3, '0')}`,
-      type: formData.type,
-      location: formData.location,
-      description: formData.description,
-      severityLevel: formData.severityLevel,
-      affectedRoutes: formData.affectedRoutes,
-      estimatedRepairCost: formData.estimatedRepairCost,
-      coordinates: formData.coordinates,
-      reportedBy: 'current_user',
-      reportedAt: new Date().toISOString(),
-      status: 'reported',
-      priorityScore
-    };
+      const response = await deathTrapApi.create(payload);
 
-    setReports([...reports, newReport]);
-    toast.success('Death trap report submitted successfully');
-    setIsAddDialogOpen(false);
-    resetForm();
+      if (response.success) {
+        notify.success('Death trap report submitted successfully');
+        setIsAddDialogOpen(false);
+        resetForm();
+        await refresh();
+      } else {
+        notify.error(response.error || 'Failed to submit hazard report');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleStatusUpdate = (reportId: string, newStatus: DeathTrapReport['status']) => {
-    const updatedReports = reports.map(report => {
-      if (report.id === reportId) {
-        const updates: Partial<DeathTrapReport> = { status: newStatus };
-        
-        if (newStatus === 'resolved') {
-          updates.resolvedAt = new Date().toISOString();
-        }
-        
-        return { ...report, ...updates };
-      }
-      return report;
-    });
+  const handleStatusUpdate = async (reportId: string, newStatus: DeathTrapReport['status']) => {
+    const response = await deathTrapApi.updateStatus(reportId, { status: newStatus });
 
-    setReports(updatedReports);
-    toast.success(`Report status updated to ${newStatus}`);
+    if (response.success) {
+      notify.success(`Report status updated to ${newStatus}`);
+      await refresh();
+    } else {
+      notify.error(response.error || 'Failed to update report status');
+    }
   };
 
   const getSeverityColor = (severity: string) => {
-    const level = severityLevels.find(s => s.value === severity);
-    return level?.color || 'gray';
+    const colors: Record<string, string> = {
+      low: '#22c55e',
+      medium: '#eab308',
+      high: '#f97316',
+      critical: '#ef4444',
+    };
+    return colors[severity] || 'gray';
   };
 
   const getStatusColor = (status: string) => {
@@ -205,7 +185,7 @@ export function DeathTrapReporting() {
   };
 
   const getTypeLabel = (type: string) => {
-    const typeObj = deathTrapTypes.find(t => t.value === type);
+    const typeObj = HAZARD_TYPE_OPTIONS.find((t) => t.value === type);
     return typeObj?.label || type;
   };
 
@@ -213,6 +193,29 @@ export function DeathTrapReporting() {
   const criticalReports = reports.filter(r => r.severityLevel === 'critical').length;
   const pendingReports = reports.filter(r => ['reported', 'acknowledged'].includes(r.status)).length;
   const resolvedReports = reports.filter(r => r.status === 'resolved').length;
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center py-24">
+        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center py-24 text-center">
+        <p className="text-sm text-muted-foreground mb-4">{error}</p>
+        <button
+          type="button"
+          onClick={() => refresh({ toastOnError: true })}
+          className="text-sm font-medium text-[#193cb8] hover:underline"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -224,208 +227,27 @@ export function DeathTrapReporting() {
             Report and manage road hazards and safety threats
           </p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Report Hazard
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Report Death Trap / Road Hazard</DialogTitle>
-              <DialogDescription>
-                Submit a new death trap or road hazard report. Fill in all required information and select the exact location on the map where the hazard is located.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-6">
-              {/* Form Fields */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Left Column - Form Fields */}
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="type">Hazard Type *</Label>
-                      <Select value={formData.type} onValueChange={(value: DeathTrapReport['type']) => setFormData({ ...formData, type: value })}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {deathTrapTypes.map(type => (
-                            <SelectItem key={type.value} value={type.value}>
-                              <span className="flex items-center">
-                                <span className="mr-2">{type.icon}</span>
-                                {type.label}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="severity">Severity Level *</Label>
-                      <Select value={formData.severityLevel} onValueChange={(value: 'low' | 'medium' | 'high' | 'critical') => setFormData({ ...formData, severityLevel: value })}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {severityLevels.map(level => (
-                            <SelectItem key={level.value} value={level.value}>
-                              <div className="flex flex-col">
-                                <span className="font-medium" style={{ color: level.color }}>
-                                  {level.label}
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  {level.description}
-                                </span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="location">Location Description *</Label>
-                      {formData.location && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleResetLocation}
-                          className="h-6 px-2 text-xs"
-                        >
-                          <RotateCcw className="h-3 w-3 mr-1" />
-                          Clear
-                        </Button>
-                      )}
-                    </div>
-                    <div className="relative">
-                      <Input
-                        id="location"
-                        value={formData.location}
-                        onChange={(e) => handleLocationInputChange(e.target.value)}
-                        placeholder="Select a location on the map or enter manually"
-                        className={isLocationFromMap ? 'bg-green-50 border-green-200' : ''}
-                      />
-                      {isLocationFromMap && (
-                        <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                          <MapPin className="h-4 w-4 text-green-600" />
-                        </div>
-                      )}
-                    </div>
-                    {isLocationFromMap && (
-                      <p className="text-sm text-green-600 flex items-center gap-1">
-                        <CheckCircle className="h-3 w-3" />
-                        Auto-filled from map selection
-                      </p>
-                    )}
-                    {formData.locationAddress && formData.locationAddress !== formData.location && (
-                      <p className="text-sm text-muted-foreground">
-                        📍 Detected address: {formData.locationAddress}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description *</Label>
-                    <Textarea
-                      id="description"
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="Detailed description of the hazard, its impact, and any immediate dangers..."
-                      rows={4}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="affectedRoutes">Affected Routes</Label>
-                    <Input
-                      id="affectedRoutes"
-                      value={formData.affectedRoutes.join(', ')}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        affectedRoutes: e.target.value.split(',').map(route => route.trim()).filter(Boolean)
-                      })}
-                      placeholder="Enter routes separated by commas (e.g., Accra-Kumasi, Tema-Kumasi)"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="estimatedCost">Estimated Repair Cost (GH₵)</Label>
-                    <Input
-                      id="estimatedCost"
-                      type="number"
-                      value={formData.estimatedRepairCost}
-                      onChange={(e) => setFormData({ ...formData, estimatedRepairCost: parseFloat(e.target.value) || 0 })}
-                      placeholder="0"
-                    />
-                  </div>
-
-                  <div className="bg-muted p-4 rounded space-y-2">
-                    <h4 className="font-medium">Priority Score Preview:</h4>
-                    <div className="text-2xl font-bold">
-                      {calculatePriorityScore(formData.severityLevel, formData.affectedRoutes.length)}/100
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Based on severity level and number of affected routes
-                    </p>
-                  </div>
-                </div>
-
-                {/* Right Column - Map */}
-                <div className="space-y-4">
-                  <MapLocationPicker
-                    onLocationSelect={handleLocationSelect}
-                    initialLocation={{ lat: 5.5600, lng: -0.2057 }}
-                  />
-                  
-                  {/* Coordinates Display */}
-                  {(formData.coordinates.lat !== 0 || formData.coordinates.lng !== 0) && (
-                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <div className="flex items-center gap-2 text-green-700">
-                        <CheckCircle className="h-4 w-4" />
-                        <span className="font-medium">Location Selected</span>
-                      </div>
-                      <div className="mt-1 text-sm text-green-600">
-                        Coordinates: {formData.coordinates.lat.toFixed(6)}, {formData.coordinates.lng.toFixed(6)}
-                      </div>
-                      {isLocationFromMap && (
-                        <div className="mt-1 text-xs text-green-600">
-                          Location description has been automatically updated
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {/* Location Help */}
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <h4 className="font-medium text-blue-800 text-sm">Location Selection Tips:</h4>
-                    <ul className="mt-1 text-xs text-blue-700 space-y-1">
-                      <li>• Click anywhere on the map to select the exact location</li>
-                      <li>• The location description will be automatically filled</li>
-                      <li>• You can edit the description after selection if needed</li>
-                      <li>• Use quick location buttons for major cities</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex justify-end space-x-2 pt-4 border-t">
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleAdd}>
-                Submit Report
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => setIsAddDialogOpen(true)} className="bg-[#193cb8] hover:bg-[#152f94]">
+          <Plus className="h-4 w-4 mr-2" />
+          Report Hazard
+        </Button>
       </div>
+
+      <ReportHazardDialog
+        open={isAddDialogOpen}
+        onOpenChange={setIsAddDialogOpen}
+        form={formData}
+        isLocationFromMap={isLocationFromMap}
+        priorityScore={priorityScore}
+        onFormChange={handleFormChange}
+        onLocationSelect={handleLocationSelect}
+        onResetLocation={handleResetLocation}
+        onSubmit={handleAdd}
+        onCancel={() => {
+          setIsAddDialogOpen(false);
+          resetForm();
+        }}
+      />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -481,9 +303,9 @@ export function DeathTrapReporting() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
-            {deathTrapTypes.map(type => (
+            {HAZARD_TYPE_OPTIONS.map((type) => (
               <SelectItem key={type.value} value={type.value}>
-                {type.icon} {type.label}
+                {type.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -494,9 +316,9 @@ export function DeathTrapReporting() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Severity</SelectItem>
-            {severityLevels.map(level => (
+            {SEVERITY_OPTIONS.map((level) => (
               <SelectItem key={level.value} value={level.value}>
-                <span style={{ color: level.color }}>{level.label}</span>
+                {level.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -527,10 +349,11 @@ export function DeathTrapReporting() {
                 <TableRow key={report.id}>
                   <TableCell className="font-medium">{report.id}</TableCell>
                   <TableCell>
-                    <div className="flex items-center">
-                      <span className="mr-2">
-                        {deathTrapTypes.find(t => t.value === report.type)?.icon}
-                      </span>
+                    <div className="flex items-center gap-2">
+                      {(() => {
+                        const TypeIcon = HAZARD_TYPE_OPTIONS.find((t) => t.value === report.type)?.icon;
+                        return TypeIcon ? <TypeIcon className="h-4 w-4 text-muted-foreground shrink-0" /> : null;
+                      })()}
                       {getTypeLabel(report.type)}
                     </div>
                   </TableCell>
@@ -635,10 +458,11 @@ export function DeathTrapReporting() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Hazard Type</Label>
-                  <div className="mt-2 flex items-center">
-                    <span className="mr-2">
-                      {deathTrapTypes.find(t => t.value === selectedReport.type)?.icon}
-                    </span>
+                  <div className="mt-2 flex items-center gap-2">
+                    {(() => {
+                      const TypeIcon = HAZARD_TYPE_OPTIONS.find((t) => t.value === selectedReport.type)?.icon;
+                      return TypeIcon ? <TypeIcon className="h-4 w-4 text-muted-foreground" /> : null;
+                    })()}
                     {getTypeLabel(selectedReport.type)}
                   </div>
                 </div>
@@ -673,7 +497,7 @@ export function DeathTrapReporting() {
                 <div>
                   <Label>Location on Map</Label>
                   <div className="mt-2 h-32 bg-muted rounded border relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-br from-green-100 to-blue-100"></div>
+                    <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom right, #10b98110, #193cb810)' }}></div>
                     {selectedReport.coordinates && (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <MapPin className="h-6 w-6 text-red-600" />

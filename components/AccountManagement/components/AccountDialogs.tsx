@@ -1,22 +1,20 @@
 import React from 'react';
+import { DollarSign, PlusCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../ui/dialog';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Textarea } from '../../ui/textarea';
-import { NewTransactionForm, NewRevenueSourceForm } from '../types';
+import type { NewRevenueSourceForm, NewTransactionForm } from '../types';
 import { EXPENSE_CATEGORIES, REVENUE_CATEGORIES } from '../constants';
 
 interface AccountDialogsProps {
-  // Add Transaction Dialog
   showAddTransactionDialog: boolean;
   setShowAddTransactionDialog: (show: boolean) => void;
   newTransaction: NewTransactionForm;
   setNewTransaction: (transaction: NewTransactionForm) => void;
   onAddTransaction: () => void;
-  
-  // Add Revenue Source Dialog
   showAddRevenueSourceDialog: boolean;
   setShowAddRevenueSourceDialog: (show: boolean) => void;
   newRevenueSource: NewRevenueSourceForm;
@@ -34,131 +32,153 @@ export function AccountDialogs({
   setShowAddRevenueSourceDialog,
   newRevenueSource,
   setNewRevenueSource,
-  onAddRevenueSource
+  onAddRevenueSource,
 }: AccountDialogsProps) {
   return (
     <>
-      {/* Add Transaction Dialog */}
       <Dialog open={showAddTransactionDialog} onOpenChange={setShowAddTransactionDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add New Transaction</DialogTitle>
-            <DialogDescription>
-              Record a new financial transaction for RISE operations
-            </DialogDescription>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0 gap-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-[#193cb8]/10 border border-[#193cb8]/20 p-2.5 shrink-0">
+                <DollarSign className="h-5 w-5 text-[#193cb8]" />
+              </div>
+              <div>
+                <DialogTitle>Add New Transaction</DialogTitle>
+                <DialogDescription className="mt-1">
+                  Record a revenue or expense entry for RISE operations.
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Transaction Type</Label>
-              <Select 
-                value={newTransaction.type} 
-                onValueChange={(value: 'revenue' | 'expense') => 
-                  setNewTransaction({...newTransaction, type: value, category: ''})
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="revenue">Revenue</SelectItem>
-                  <SelectItem value="expense">Expense</SelectItem>
-                </SelectContent>
-              </Select>
+
+          <div className="px-6 py-5 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Transaction Type</Label>
+                <Select
+                  value={newTransaction.type}
+                  onValueChange={(value: 'revenue' | 'expense') =>
+                    setNewTransaction({ ...newTransaction, type: value, category: '' })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="revenue">Revenue</SelectItem>
+                    <SelectItem value="expense">Expense</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Date *</Label>
+                <Input
+                  type="date"
+                  value={newTransaction.date}
+                  onChange={(e) => setNewTransaction({ ...newTransaction, date: e.target.value })}
+                />
+              </div>
             </div>
 
-            <div>
+            <div className="space-y-2">
               <Label>Category *</Label>
-              <Select 
-                value={newTransaction.category} 
-                onValueChange={(value) => setNewTransaction({...newTransaction, category: value})}
+              <Select
+                value={newTransaction.category}
+                onValueChange={(value) => setNewTransaction({ ...newTransaction, category: value })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(newTransaction.type === 'expense' ? EXPENSE_CATEGORIES : REVENUE_CATEGORIES).map(category => (
-                    <SelectItem key={category} value={category}>{category}</SelectItem>
-                  ))}
+                  {(newTransaction.type === 'expense' ? EXPENSE_CATEGORIES : REVENUE_CATEGORIES).map(
+                    (category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    )
+                  )}
                 </SelectContent>
               </Select>
             </div>
 
-            <div>
+            <div className="space-y-2">
               <Label>Amount (₵) *</Label>
               <Input
                 type="number"
+                min={0}
+                step="0.01"
                 placeholder="0.00"
                 value={newTransaction.amount}
-                onChange={(e) => setNewTransaction({...newTransaction, amount: e.target.value})}
+                onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
               />
             </div>
 
-            <div>
+            <div className="space-y-2">
               <Label>Description *</Label>
               <Textarea
                 placeholder="Describe the transaction..."
+                rows={3}
                 value={newTransaction.description}
-                onChange={(e) => setNewTransaction({...newTransaction, description: e.target.value})}
+                onChange={(e) => setNewTransaction({ ...newTransaction, description: e.target.value })}
               />
             </div>
 
             {newTransaction.type === 'revenue' ? (
-              <div>
+              <div className="space-y-2">
                 <Label>Source</Label>
                 <Input
                   placeholder="Revenue source"
                   value={newTransaction.source}
-                  onChange={(e) => setNewTransaction({...newTransaction, source: e.target.value})}
+                  onChange={(e) => setNewTransaction({ ...newTransaction, source: e.target.value })}
                 />
               </div>
             ) : (
-              <div>
+              <div className="space-y-2">
                 <Label>Recipient</Label>
                 <Input
                   placeholder="Payment recipient"
                   value={newTransaction.recipient}
-                  onChange={(e) => setNewTransaction({...newTransaction, recipient: e.target.value})}
+                  onChange={(e) => setNewTransaction({ ...newTransaction, recipient: e.target.value })}
                 />
               </div>
             )}
+          </div>
 
-            <div>
-              <Label>Date *</Label>
-              <Input
-                type="date"
-                value={newTransaction.date}
-                onChange={(e) => setNewTransaction({...newTransaction, date: e.target.value})}
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setShowAddTransactionDialog(false)}>
-                Cancel
-              </Button>
-              <Button onClick={onAddTransaction}>
-                Add Transaction
-              </Button>
-            </div>
+          <div className="flex justify-end gap-2 px-6 py-4 border-t bg-muted/10">
+            <Button variant="outline" onClick={() => setShowAddTransactionDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={onAddTransaction} className="bg-[#193cb8] hover:bg-[#152f94]">
+              Add Transaction
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Add Revenue Source Dialog */}
       <Dialog open={showAddRevenueSourceDialog} onOpenChange={setShowAddRevenueSourceDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add Revenue Source</DialogTitle>
-            <DialogDescription>
-              Register a new source of revenue for the RISE system
-            </DialogDescription>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0 gap-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200/60 p-2.5 shrink-0">
+                <PlusCircle className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <DialogTitle>Add Revenue Source</DialogTitle>
+                <DialogDescription className="mt-1">
+                  Register a new station, union, or regional revenue contributor.
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
+
+          <div className="px-6 py-5 space-y-4">
+            <div className="space-y-2">
               <Label>Source Type *</Label>
-              <Select 
-                value={newRevenueSource.type} 
-                onValueChange={(value: 'station' | 'union' | 'district' | 'region') => 
-                  setNewRevenueSource({...newRevenueSource, type: value})
+              <Select
+                value={newRevenueSource.type}
+                onValueChange={(value: 'station' | 'union' | 'district' | 'region') =>
+                  setNewRevenueSource({ ...newRevenueSource, type: value })
                 }
               >
                 <SelectTrigger>
@@ -173,71 +193,80 @@ export function AccountDialogs({
               </Select>
             </div>
 
-            <div>
+            <div className="space-y-2">
               <Label>Name *</Label>
               <Input
                 placeholder="Source name"
                 value={newRevenueSource.name}
-                onChange={(e) => setNewRevenueSource({...newRevenueSource, name: e.target.value})}
+                onChange={(e) => setNewRevenueSource({ ...newRevenueSource, name: e.target.value })}
               />
             </div>
 
-            <div>
-              <Label>Region *</Label>
-              <Input
-                placeholder="Region name"
-                value={newRevenueSource.region}
-                onChange={(e) => setNewRevenueSource({...newRevenueSource, region: e.target.value})}
-              />
-            </div>
-
-            {(newRevenueSource.type === 'station' || newRevenueSource.type === 'district') && (
-              <div>
-                <Label>District</Label>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Region *</Label>
                 <Input
-                  placeholder="District name"
-                  value={newRevenueSource.district}
-                  onChange={(e) => setNewRevenueSource({...newRevenueSource, district: e.target.value})}
+                  placeholder="Region name"
+                  value={newRevenueSource.region}
+                  onChange={(e) => setNewRevenueSource({ ...newRevenueSource, region: e.target.value })}
                 />
               </div>
-            )}
-
-            <div>
-              <Label>Contact Person *</Label>
-              <Input
-                placeholder="Contact person name"
-                value={newRevenueSource.contactPerson}
-                onChange={(e) => setNewRevenueSource({...newRevenueSource, contactPerson: e.target.value})}
-              />
+              {(newRevenueSource.type === 'station' || newRevenueSource.type === 'district') && (
+                <div className="space-y-2">
+                  <Label>District</Label>
+                  <Input
+                    placeholder="District name"
+                    value={newRevenueSource.district}
+                    onChange={(e) =>
+                      setNewRevenueSource({ ...newRevenueSource, district: e.target.value })
+                    }
+                  />
+                </div>
+              )}
             </div>
 
-            <div>
-              <Label>Phone</Label>
-              <Input
-                placeholder="Contact phone number"
-                value={newRevenueSource.phone}
-                onChange={(e) => setNewRevenueSource({...newRevenueSource, phone: e.target.value})}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Contact Person *</Label>
+                <Input
+                  placeholder="Contact name"
+                  value={newRevenueSource.contactPerson}
+                  onChange={(e) =>
+                    setNewRevenueSource({ ...newRevenueSource, contactPerson: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Phone</Label>
+                <Input
+                  placeholder="+233..."
+                  value={newRevenueSource.phone}
+                  onChange={(e) => setNewRevenueSource({ ...newRevenueSource, phone: e.target.value })}
+                />
+              </div>
             </div>
 
-            <div>
+            <div className="space-y-2">
               <Label>Monthly Target (₵) *</Label>
               <Input
                 type="number"
+                min={0}
                 placeholder="0.00"
                 value={newRevenueSource.monthlyTarget}
-                onChange={(e) => setNewRevenueSource({...newRevenueSource, monthlyTarget: e.target.value})}
+                onChange={(e) =>
+                  setNewRevenueSource({ ...newRevenueSource, monthlyTarget: e.target.value })
+                }
               />
             </div>
+          </div>
 
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setShowAddRevenueSourceDialog(false)}>
-                Cancel
-              </Button>
-              <Button onClick={onAddRevenueSource}>
-                Add Revenue Source
-              </Button>
-            </div>
+          <div className="flex justify-end gap-2 px-6 py-4 border-t bg-muted/10">
+            <Button variant="outline" onClick={() => setShowAddRevenueSourceDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={onAddRevenueSource} className="bg-[#193cb8] hover:bg-[#152f94]">
+              Add Revenue Source
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

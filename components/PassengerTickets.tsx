@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -24,7 +24,9 @@ import {
   MessageSquare,
   Send,
   ThumbsUp,
-  AlertTriangle
+  AlertTriangle,
+  Smartphone,
+  Loader2
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
@@ -32,122 +34,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Separator } from './ui/separator';
-import { toast } from 'sonner';
-
-// Mock data for passenger tickets with ratings and complaints
-const mockTickets = [
-  {
-    id: 'TKT001',
-    tripId: 'TRP001',
-    passengerName: 'John Doe',
-    passengerPhone: '+233 24 111 1111',
-    passengerEmail: 'john.doe@email.com',
-    routeFrom: 'Accra Central',
-    routeTo: 'Kumasi Main',
-    departureTime: '2024-01-20T08:00:00',
-    arrivalTime: '2024-01-20T12:30:00',
-    seatNumber: 'A12',
-    fare: 45,
-    bookingDate: '2024-01-15T10:30:00',
-    vehicle: 'GV-123-20',
-    driver: 'Kwame Asante',
-    status: 'used',
-    qrCode: 'QR-TKT001-2024',
-    stationId: 'STA001',
-    stationName: 'Accra Central Station',
-    notes: 'Window seat requested',
-    rating: 4,
-    ratingDate: '2024-01-20T13:00:00',
-    complaint: null
-  },
-  {
-    id: 'TKT002',
-    tripId: 'TRP001',
-    passengerName: 'Jane Smith',
-    passengerPhone: '+233 26 222 2222',
-    passengerEmail: 'jane.smith@email.com',
-    routeFrom: 'Accra Central',
-    routeTo: 'Kumasi Main',
-    departureTime: '2024-01-20T08:00:00',
-    arrivalTime: '2024-01-20T12:30:00',
-    seatNumber: 'B05',
-    fare: 45,
-    bookingDate: '2024-01-16T14:20:00',
-    vehicle: 'GV-123-20',
-    driver: 'Kwame Asante',
-    status: 'confirmed',
-    qrCode: 'QR-TKT002-2024',
-    stationId: 'STA001',
-    stationName: 'Accra Central Station',
-    notes: '',
-    rating: null,
-    ratingDate: null,
-    complaint: null
-  },
-  {
-    id: 'TKT003',
-    tripId: 'TRP002',
-    passengerName: 'Kwaku Mensah',
-    passengerPhone: '+233 27 333 3333',
-    passengerEmail: 'kwaku.mensah@email.com',
-    routeFrom: 'Accra Central',
-    routeTo: 'Cape Coast',
-    departureTime: '2024-01-18T10:30:00',
-    arrivalTime: '2024-01-18T13:00:00',
-    seatNumber: 'C08',
-    fare: 35,
-    bookingDate: '2024-01-10T09:15:00',
-    vehicle: 'GV-456-21',
-    driver: 'Ama Osei',
-    status: 'used',
-    qrCode: 'QR-TKT003-2024',
-    stationId: 'STA001',
-    stationName: 'Accra Central Station',
-    notes: 'Luggage: 2 bags',
-    rating: 2,
-    ratingDate: '2024-01-18T13:30:00',
-    complaint: {
-      id: 'CMP001',
-      category: 'vehicle_condition',
-      description: 'Air conditioning was not working during the trip. Very uncomfortable journey.',
-      submittedDate: '2024-01-18T13:30:00',
-      status: 'pending',
-      priority: 'medium'
-    }
-  },
-  {
-    id: 'TKT004',
-    tripId: 'TRP004',
-    passengerName: 'Akosua Darko',
-    passengerPhone: '+233 28 444 4444',
-    passengerEmail: 'akosua.darko@email.com',
-    routeFrom: 'Kumasi Main',
-    routeTo: 'Accra Central',
-    departureTime: '2024-01-25T15:00:00',
-    arrivalTime: '2024-01-25T19:30:00',
-    seatNumber: 'A01',
-    fare: 45,
-    bookingDate: '2024-01-19T16:45:00',
-    vehicle: 'KU-789-19',
-    driver: 'Kofi Mensah',
-    status: 'cancelled',
-    qrCode: 'QR-TKT004-2024',
-    stationId: 'STA002',
-    stationName: 'Kumasi Main Station',
-    notes: 'Cancelled due to vehicle maintenance',
-    rating: null,
-    ratingDate: null,
-    complaint: {
-      id: 'CMP002',
-      category: 'trip_cancellation',
-      description: 'Trip was cancelled last minute without proper notice. I had to make alternative arrangements.',
-      submittedDate: '2024-01-25T12:00:00',
-      status: 'resolved',
-      priority: 'high',
-      response: 'We apologize for the inconvenience. A full refund has been processed and you have been contacted by our customer service team.'
-    }
-  }
-];
+import { notify } from './utils/notify';
+import {
+  printETicket,
+  resendETicketSms,
+  TICKET_ISSUED_EVENT,
+  type ETicket,
+} from './utils/eTicket';
+import { ticketApi } from './utils/api';
+import { useEntityList } from './shared/hooks/useEntityList';
+import { Alert, AlertDescription } from './ui/alert';
 
 const ticketStatuses = [
   { value: 'confirmed', label: 'Confirmed', color: 'bg-green-100 text-green-800', icon: CheckCircle },
@@ -169,10 +65,39 @@ const complaintCategories = [
 
 export function PassengerTickets() {
   const { user } = useAuth();
-  const [tickets, setTickets] = useState(mockTickets);
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const stationId = user?.stationId;
+
+  const fetchTickets = useCallback(
+    () => ticketApi.getAll(isAdmin ? undefined : { stationId }),
+    [isAdmin, stationId]
+  );
+
+  const {
+    items: tickets,
+    loading,
+    refresh,
+    setItems: setTickets,
+  } = useEntityList<ETicket>({
+    fetchFn: fetchTickets,
+    entityKey: 'tickets',
+    errorMessage: 'Failed to load tickets',
+  });
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedTicket, setSelectedTicket] = useState<any>(null);
+  const [selectedTicket, setSelectedTicket] = useState<ETicket | null>(null);
   const [showTicketDialog, setShowTicketDialog] = useState(false);
+  const [resendingSms, setResendingSms] = useState(false);
+
+  useEffect(() => {
+    const onTicketIssued = (event: Event) => {
+      const ticket = (event as CustomEvent<ETicket>).detail;
+      setTickets((prev) => [ticket, ...prev.filter((t) => t.id !== ticket.id)]);
+      refresh();
+    };
+    window.addEventListener(TICKET_ISSUED_EVENT, onTicketIssued);
+    return () => window.removeEventListener(TICKET_ISSUED_EVENT, onTicketIssued);
+  }, [refresh, setTickets]);
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
@@ -182,12 +107,7 @@ export function PassengerTickets() {
     priority: 'medium'
   });
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
-  
-  // Filter tickets based on user role
-  const userTickets = isAdmin 
-    ? tickets 
-    : tickets.filter(t => t.stationId === user?.stationId);
+  const userTickets = isAdmin ? tickets : tickets.filter((t) => t.stationId === user?.stationId);
 
   // Apply search and status filters
   const filteredTickets = userTickets.filter(ticket => {
@@ -214,44 +134,91 @@ export function PassengerTickets() {
     );
   };
 
-  const handlePrintTicket = (ticket: any) => {
-    console.log('Printing ticket:', ticket.id);
-    toast.success('Ticket download started');
+  const handleResendSms = useCallback(async (ticket: ETicket) => {
+    setResendingSms(true);
+    try {
+      const updated = await resendETicketSms(ticket);
+      setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      setSelectedTicket(updated);
+    } finally {
+      setResendingSms(false);
+    }
+  }, []);
+
+  const getSmsBadge = (ticket: ETicket) => {
+    if (ticket.smsStatus === 'sent') {
+      return (
+        <Badge className="bg-green-100 text-green-800">
+          <Smartphone className="h-3 w-3 mr-1" />
+          SMS Sent
+        </Badge>
+      );
+    }
+    if (ticket.smsStatus === 'failed') {
+      return (
+        <Badge className="bg-red-100 text-red-800">
+          <Smartphone className="h-3 w-3 mr-1" />
+          SMS Failed
+        </Badge>
+      );
+    }
+    return null;
   };
 
-  const handleRating = (ticketId: string, ratingValue: number) => {
-    setTickets(tickets.map(ticket => 
-      ticket.id === ticketId 
-        ? { ...ticket, rating: ratingValue, ratingDate: new Date().toISOString() }
-        : ticket
-    ));
-    toast.success(`Thank you for rating your trip ${ratingValue} star${ratingValue !== 1 ? 's' : ''}!`);
+  const handlePrintTicket = (ticket: ETicket) => {
+    printETicket(ticket);
   };
 
-  const handleComplaintSubmit = (ticketId: string) => {
+  const handleRating = async (ticketId: string, ratingValue: number) => {
+    const response = await ticketApi.submitRating(ticketId, ratingValue);
+    if (response.success) {
+      setTickets((prev) =>
+        prev.map((ticket) =>
+          ticket.id === ticketId
+            ? { ...ticket, rating: ratingValue, ratingDate: new Date().toISOString() }
+            : ticket
+        )
+      );
+      notify.success(`Thank you for rating your trip ${ratingValue} star${ratingValue !== 1 ? 's' : ''}!`);
+    } else {
+      notify.error(response.error ?? 'Failed to submit rating');
+    }
+  };
+
+  const handleComplaintSubmit = async (ticketId: string) => {
     if (!complaintForm.category || !complaintForm.description.trim()) {
-      toast.error('Please fill in all required fields');
+      notify.error('Please fill in all required fields');
       return;
     }
 
-    const newComplaint = {
-      id: `CMP${Date.now()}`,
+    const response = await ticketApi.submitComplaint(ticketId, {
       category: complaintForm.category,
       description: complaintForm.description,
-      submittedDate: new Date().toISOString(),
-      status: 'pending',
       priority: complaintForm.priority,
-      response: null
-    };
+    });
 
-    setTickets(tickets.map(ticket => 
-      ticket.id === ticketId 
-        ? { ...ticket, complaint: newComplaint }
-        : ticket
-    ));
+    if (response.success) {
+      const newComplaint = {
+        id: `CMP${Date.now()}`,
+        category: complaintForm.category,
+        description: complaintForm.description,
+        submittedDate: new Date().toISOString(),
+        status: 'pending',
+        priority: complaintForm.priority,
+        response: null,
+      };
 
-    setComplaintForm({ category: '', description: '', priority: 'medium' });
-    toast.success('Your complaint has been submitted successfully');
+      setTickets((prev) =>
+        prev.map((ticket) =>
+          ticket.id === ticketId ? { ...ticket, complaint: newComplaint } : ticket
+        )
+      );
+
+      setComplaintForm({ category: '', description: '', priority: 'medium' });
+      notify.success('Your complaint has been submitted successfully');
+    } else {
+      notify.error(response.error ?? 'Failed to submit complaint');
+    }
   };
 
   const renderStarRating = (currentRating: number, onRate: (rating: number) => void, interactive: boolean = true) => {
@@ -314,7 +281,7 @@ export function PassengerTickets() {
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <MapPin className="h-4 w-4 text-blue-600" />
+            <MapPin className="h-4 w-4 text-[#193cb8]" />
             <span className="text-sm">{ticket.routeFrom} → {ticket.routeTo}</span>
           </div>
           <span className="text-sm font-medium">₵{ticket.fare}</span>
@@ -377,25 +344,39 @@ export function PassengerTickets() {
     </Card>
   );
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-6">
+        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8] mb-4" />
+        <p className="text-muted-foreground">Loading tickets...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Passenger Tickets</h1>
-          <p className="text-gray-600">
-            {isAdmin 
-              ? 'View and manage all passenger tickets across RISE stations' 
-              : `Manage passenger tickets for ${user?.stationName}`
-            }
-          </p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold">Passenger Tickets</h1>
+        <p className="text-gray-600">
+          {isAdmin
+            ? 'View all e-tickets issued across RISE stations'
+            : `E-tickets for ${user?.stationName}`}
+        </p>
       </div>
+
+      <Alert className="border-[#193cb8]/20 bg-[#193cb8]/5">
+        <Smartphone className="h-4 w-4 text-[#193cb8]" />
+        <AlertDescription>
+          E-tickets are issued automatically when a passenger is booked on a trip. The ticket URL is sent to the passenger&apos;s phone via SMS — no manual issuing required. Book passengers from{' '}
+          <strong>Trip Management</strong> or <strong>Passenger Management</strong>.
+        </AlertDescription>
+      </Alert>
 
       {/* Ticket Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-6 text-center">
-            <Ticket className="h-8 w-8 mx-auto mb-2 text-blue-600" />
+            <Ticket className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
             <p className="text-2xl font-bold">{userTickets.length}</p>
             <p className="text-sm text-gray-600">Total Tickets</p>
           </CardContent>
@@ -637,9 +618,47 @@ export function PassengerTickets() {
                       <span className="text-gray-600">Status:</span>
                       <div className="mt-1">{getStatusBadge(selectedTicket.status)}</div>
                     </div>
+                    {selectedTicket.eTicketUrl && (
+                      <div>
+                        <span className="text-gray-600">E-Ticket URL:</span>
+                        <a
+                          href={selectedTicket.eTicketUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#193cb8] text-xs break-all hover:underline block mt-1"
+                        >
+                          {selectedTicket.eTicketUrl}
+                        </a>
+                      </div>
+                    )}
+                    {selectedTicket.smsStatus && (
+                      <div>
+                        <span className="text-gray-600">SMS Delivery:</span>
+                        <div className="mt-1 flex items-center gap-2">
+                          {getSmsBadge(selectedTicket)}
+                          {selectedTicket.smsSentAt && (
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(selectedTicket.smsSentAt).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-                
+
+                {selectedTicket.eTicketUrl && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    disabled={resendingSms}
+                    onClick={() => handleResendSms(selectedTicket)}
+                  >
+                    <Smartphone className="h-4 w-4 mr-2" />
+                    {resendingSms ? 'Sending…' : 'Resend E-Ticket SMS'}
+                  </Button>
+                )}
+
                 {selectedTicket.notes && (
                   <div>
                     <span className="text-gray-600">Notes:</span>
@@ -724,9 +743,9 @@ export function PassengerTickets() {
                             <p className="text-sm">{new Date(selectedTicket.complaint.submittedDate).toLocaleString()}</p>
                           </div>
                           {selectedTicket.complaint.response && (
-                            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                              <span className="text-sm font-medium text-blue-700">Admin Response:</span>
-                              <p className="text-sm text-blue-600 mt-1">{selectedTicket.complaint.response}</p>
+                            <div className="mt-4 p-3 bg-[#193cb8]/10 rounded-lg">
+                              <span className="text-sm font-medium text-[#193cb8]">Admin Response:</span>
+                              <p className="text-sm text-[#193cb8] mt-1">{selectedTicket.complaint.response}</p>
                             </div>
                           )}
                         </div>

@@ -53,6 +53,9 @@ export const DEFAULT_NEW_TRANSACTION = {
   tags: [] as string[]
 };
 
+export const ACCOUNT_TAB_TRIGGER_CLASS =
+  'rounded-md py-2 text-xs sm:text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=active]:bg-violet-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:font-semibold data-[state=active]:ring-1 data-[state=active]:ring-violet-700/40';
+
 export const DEFAULT_NEW_REVENUE_SOURCE = {
   name: '',
   type: 'station' as const,

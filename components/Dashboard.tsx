@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useAuth } from './AuthContext';
 import { 
@@ -12,10 +12,10 @@ import {
   Calendar,
   BarChart3,
   PieChart,
-  LineChart
+  Loader2
 } from 'lucide-react';
 import { Badge } from './ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { 
   LineChart as RechartsLineChart, 
   Line, 
@@ -27,87 +27,152 @@ import {
   BarChart as RechartsBarChart,
   Bar,
   PieChart as RechartsPieChart,
+  Pie,
   Cell,
   Legend
 } from 'recharts';
+import { dashboardApi, parseListResponse } from './utils/api';
+import { UserActivityPanel } from './Dashboard/UserActivityPanel';
 
-// Mock data for dashboard
-const adminStats = {
-  totalUsers: 45,
-  totalStations: 12,
-  totalVehicles: 234,
-  totalTrips: 1456,
-  monthlyRevenue: 45670,
-  activeIncidents: 3
-};
+const REGION_COLORS = ['#193cb8', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
-const workerStats = {
-  stationVehicles: 18,
-  todayTrips: 24,
-  completedTrips: 156,
-  stationRevenue: 12450,
-  activeDrivers: 15,
-  pendingMaintenance: 2
-};
+type ChartPoint = { name: string; trips: number; revenue: number; passengers: number };
+type RegionPoint = { name: string; value: number; color?: string };
+type ActivityItem = { id: string | number; type: string; message: string; time: string };
 
-// Mock analytics data
-const dailyData = [
-  { name: 'Mon', trips: 45, revenue: 2300, passengers: 340 },
-  { name: 'Tue', trips: 52, revenue: 2650, passengers: 385 },
-  { name: 'Wed', trips: 48, revenue: 2400, passengers: 360 },
-  { name: 'Thu', trips: 61, revenue: 3100, passengers: 425 },
-  { name: 'Fri', trips: 58, revenue: 2950, passengers: 410 },
-  { name: 'Sat', trips: 72, revenue: 3800, passengers: 520 },
-  { name: 'Sun', trips: 65, revenue: 3400, passengers: 485 }
-];
+function extractChartData(data: unknown): ChartPoint[] {
+  if (Array.isArray(data)) return data as ChartPoint[];
+  if (data && typeof data === 'object') {
+    const record = data as Record<string, unknown>;
+    const points = record.points ?? record.data ?? record.chart;
+    if (Array.isArray(points)) return points as ChartPoint[];
+  }
+  return [];
+}
 
-const monthlyData = [
-  { name: 'Jan', trips: 1240, revenue: 62000, passengers: 8900 },
-  { name: 'Feb', trips: 1180, revenue: 59000, passengers: 8500 },
-  { name: 'Mar', trips: 1350, revenue: 67500, passengers: 9800 },
-  { name: 'Apr', trips: 1420, revenue: 71000, passengers: 10200 },
-  { name: 'May', trips: 1380, revenue: 69000, passengers: 9950 },
-  { name: 'Jun', trips: 1450, revenue: 72500, passengers: 10400 },
-  { name: 'Jul', trips: 1520, revenue: 76000, passengers: 10800 },
-  { name: 'Aug', trips: 1480, revenue: 74000, passengers: 10600 },
-  { name: 'Sep', trips: 1390, revenue: 69500, passengers: 10000 },
-  { name: 'Oct', trips: 1460, revenue: 73000, passengers: 10500 },
-  { name: 'Nov', trips: 1510, revenue: 75500, passengers: 10850 },
-  { name: 'Dec', trips: 1580, revenue: 79000, passengers: 11200 }
-];
-
-const yearlyData = [
-  { name: '2020', trips: 14500, revenue: 725000, passengers: 104000 },
-  { name: '2021', trips: 12800, revenue: 640000, passengers: 92000 },
-  { name: '2022', trips: 15200, revenue: 760000, passengers: 109000 },
-  { name: '2023', trips: 16800, revenue: 840000, passengers: 120000 },
-  { name: '2024', trips: 17260, revenue: 863000, passengers: 124000 }
-];
-
-const regionData = [
-  { name: 'Greater Accra', value: 35, color: '#0088FE' },
-  { name: 'Ashanti', value: 28, color: '#00C49F' },
-  { name: 'Western', value: 15, color: '#FFBB28' },
-  { name: 'Central', value: 12, color: '#FF8042' },
-  { name: 'Others', value: 10, color: '#8884d8' }
-];
-
-const recentActivities = [
-  { id: 1, type: 'trip', message: 'New trip booked: Accra to Kumasi', time: '2 minutes ago' },
-  { id: 2, type: 'incident', message: 'Vehicle breakdown reported on N1 Highway', time: '15 minutes ago' },
-  { id: 3, type: 'driver', message: 'New driver registered: Kwaku Boateng', time: '1 hour ago' },
-  { id: 4, type: 'maintenance', message: 'Vehicle GV-123-20 maintenance completed', time: '2 hours ago' }
-];
+function extractRegionData(data: unknown): RegionPoint[] {
+  if (Array.isArray(data)) {
+    return (data as RegionPoint[]).map((item, index) => ({
+      ...item,
+      color: item.color ?? REGION_COLORS[index % REGION_COLORS.length],
+    }));
+  }
+  if (data && typeof data === 'object') {
+    const record = data as Record<string, unknown>;
+    const regions = record.regions ?? record.data;
+    if (Array.isArray(regions)) {
+      return (regions as RegionPoint[]).map((item, index) => ({
+        ...item,
+        color: item.color ?? REGION_COLORS[index % REGION_COLORS.length],
+      }));
+    }
+  }
+  return [];
+}
 
 export function Dashboard() {
-  const { user } = useAuth();
-  const [selectedPeriod, setSelectedPeriod] = useState('daily');
-  const isAdmin = user?.role === 'admin';
+  const { user, isSuperAdmin } = useAuth();
+  const [selectedPeriod, setSelectedPeriod] = useState<'daily' | 'monthly' | 'yearly'>('daily');
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+
+  const [stats, setStats] = useState<Record<string, number> | null>(null);
+  const [chartData, setChartData] = useState<ChartPoint[]>([]);
+  const [regionData, setRegionData] = useState<RegionPoint[]>([]);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [chartsLoading, setChartsLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStats = async () => {
+      setLoading(true);
+      setStatsError(null);
+      try {
+        const response = isAdmin
+          ? await dashboardApi.getAdmin(selectedPeriod)
+          : await dashboardApi.getStation({ stationId: user?.stationId, period: selectedPeriod });
+
+        if (!cancelled) {
+          if (response.success && response.data) {
+            setStats(response.data as Record<string, number>);
+          } else {
+            setStatsError(response.error ?? 'Failed to load dashboard stats');
+            setStats(null);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setStatsError('Failed to load dashboard stats');
+          setStats(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadStats();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, user?.stationId, selectedPeriod]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setChartsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadCharts = async () => {
+      setChartsLoading(true);
+      try {
+        const [chartRes, regionRes] = await Promise.all([
+          dashboardApi.getTripsRevenueChart({ period: selectedPeriod }),
+          dashboardApi.getRegionsChart({ period: selectedPeriod }),
+        ]);
+
+        if (!cancelled) {
+          if (chartRes.success) setChartData(extractChartData(chartRes.data));
+          if (regionRes.success) setRegionData(extractRegionData(regionRes.data));
+        }
+      } finally {
+        if (!cancelled) setChartsLoading(false);
+      }
+    };
+
+    loadCharts();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, selectedPeriod]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadActivities = async () => {
+      const response = await dashboardApi.getActivities({
+        limit: 10,
+        stationId: isAdmin ? undefined : user?.stationId,
+      });
+
+      if (!cancelled && response.success && response.data !== undefined) {
+        setActivities(parseListResponse<ActivityItem>(response.data, 'activities'));
+      }
+    };
+
+    loadActivities();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, user?.stationId]);
 
   const StatCard = ({ title, value, icon: Icon, change, trend }: {
     title: string;
     value: string | number;
-    icon: any;
+    icon: React.ComponentType<{ className?: string }>;
     change?: string;
     trend?: 'up' | 'down';
   }) => (
@@ -130,94 +195,58 @@ export function Dashboard() {
     </Card>
   );
 
-  const getChartData = () => {
-    switch (selectedPeriod) {
-      case 'monthly': return monthlyData;
-      case 'yearly': return yearlyData;
-      default: return dailyData;
-    }
-  };
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-6">
+        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8] mb-4" />
+        <p className="text-muted-foreground">Loading dashboard...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold">Welcome back, {user?.name}</h1>
+        <h1 className="text-3xl font-bold">Welcome back, {user?.fullName}</h1>
         <p className="text-gray-600">
           {isAdmin 
             ? 'Here\'s what\'s happening across all RISE stations today.' 
             : `Managing ${user?.stationName} - here's your station overview.`
           }
         </p>
+        {statsError && (
+          <p className="text-sm text-red-600 mt-2">{statsError}</p>
+        )}
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {isAdmin ? (
           <>
-            <StatCard
-              title="Total Users"
-              value={adminStats.totalUsers}
-              icon={Users}
-              change="+12% from last month"
-              trend="up"
-            />
-            <StatCard
-              title="Active Stations"
-              value={adminStats.totalStations}
-              icon={MapPin}
-              change="+2 new stations"
-              trend="up"
-            />
-            <StatCard
-              title="Fleet Vehicles"
-              value={adminStats.totalVehicles}
-              icon={Bus}
-              change="+8% this month"
-              trend="up"
-            />
+            <StatCard title="Total Users" value={stats?.totalUsers ?? 0} icon={Users} />
+            <StatCard title="Active Stations" value={stats?.totalStations ?? 0} icon={MapPin} />
+            <StatCard title="Fleet Vehicles" value={stats?.totalVehicles ?? 0} icon={Bus} />
             <StatCard
               title="Monthly Revenue"
-              value={`₵${adminStats.monthlyRevenue.toLocaleString()}`}
+              value={`₵${(stats?.monthlyRevenue ?? 0).toLocaleString()}`}
               icon={DollarSign}
-              change="+15% vs last month"
-              trend="up"
             />
           </>
         ) : (
           <>
-            <StatCard
-              title="Station Vehicles"
-              value={workerStats.stationVehicles}
-              icon={Bus}
-              change="2 in maintenance"
-            />
-            <StatCard
-              title="Today's Trips"
-              value={workerStats.todayTrips}
-              icon={Route}
-              change="+3 from yesterday"
-              trend="up"
-            />
-            <StatCard
-              title="Active Drivers"
-              value={workerStats.activeDrivers}
-              icon={Users}
-              change="All available"
-              trend="up"
-            />
+            <StatCard title="Station Vehicles" value={stats?.stationVehicles ?? 0} icon={Bus} />
+            <StatCard title="Today's Trips" value={stats?.todayTrips ?? 0} icon={Route} />
+            <StatCard title="Active Drivers" value={stats?.activeDrivers ?? 0} icon={Users} />
             <StatCard
               title="Station Revenue"
-              value={`₵${workerStats.stationRevenue.toLocaleString()}`}
+              value={`₵${(stats?.stationRevenue ?? 0).toLocaleString()}`}
               icon={DollarSign}
-              change="+8% this week"
-              trend="up"
             />
           </>
         )}
       </div>
 
-      {/* Analytics Charts (Admin Only) */}
+      {isSuperAdmin() && <UserActivityPanel />}
+
       {isAdmin && (
         <div className="space-y-6">
           <Card>
@@ -227,7 +256,7 @@ export function Dashboard() {
                   <BarChart3 className="h-5 w-5" />
                   <span>Analytics Overview</span>
                 </CardTitle>
-                <Tabs value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                <Tabs value={selectedPeriod} onValueChange={(v) => setSelectedPeriod(v as typeof selectedPeriod)}>
                   <TabsList>
                     <TabsTrigger value="daily">Daily</TabsTrigger>
                     <TabsTrigger value="monthly">Monthly</TabsTrigger>
@@ -237,55 +266,58 @@ export function Dashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Trips and Revenue Chart */}
-                <div>
-                  <h4 className="text-sm font-medium mb-4">Trips & Revenue</h4>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <RechartsLineChart data={getChartData()}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis yAxisId="left" />
-                      <YAxis yAxisId="right" orientation="right" />
-                      <Tooltip />
-                      <Line 
-                        yAxisId="left" 
-                        type="monotone" 
-                        dataKey="trips" 
-                        stroke="#8884d8" 
-                        strokeWidth={2}
-                        name="Trips"
-                      />
-                      <Line 
-                        yAxisId="right" 
-                        type="monotone" 
-                        dataKey="revenue" 
-                        stroke="#82ca9d" 
-                        strokeWidth={2}
-                        name="Revenue (₵)"
-                      />
-                    </RechartsLineChart>
-                  </ResponsiveContainer>
+              {chartsLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
                 </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="text-sm font-medium mb-4">Trips & Revenue</h4>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <RechartsLineChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis yAxisId="left" />
+                        <YAxis yAxisId="right" orientation="right" />
+                        <Tooltip />
+                        <Line 
+                          yAxisId="left" 
+                          type="monotone" 
+                          dataKey="trips" 
+                          stroke="#193cb8" 
+                          strokeWidth={2}
+                          name="Trips"
+                        />
+                        <Line 
+                          yAxisId="right" 
+                          type="monotone" 
+                          dataKey="revenue" 
+                          stroke="#82ca9d" 
+                          strokeWidth={2}
+                          name="Revenue (₵)"
+                        />
+                      </RechartsLineChart>
+                    </ResponsiveContainer>
+                  </div>
 
-                {/* Passenger Traffic */}
-                <div>
-                  <h4 className="text-sm font-medium mb-4">Passenger Traffic</h4>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <RechartsBarChart data={getChartData()}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="passengers" fill="#8884d8" />
-                    </RechartsBarChart>
-                  </ResponsiveContainer>
+                  <div>
+                    <h4 className="text-sm font-medium mb-4">Passenger Traffic</h4>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <RechartsBarChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip />
+                        <Bar dataKey="passengers" fill="#193cb8" />
+                      </RechartsBarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Regional Distribution */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
@@ -294,41 +326,45 @@ export function Dashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
-                <ResponsiveContainer width="100%" height={300}>
-                  <RechartsPieChart>
-                    <Tooltip />
-                    <Legend />
-                    <RechartsPieChart dataKey="value">
-                      {regionData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </RechartsPieChart>
-                  </RechartsPieChart>
-                </ResponsiveContainer>
-                <div className="space-y-3">
-                  {regionData.map((region, index) => (
-                    <div key={index} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <div 
-                          className="w-3 h-3 rounded-full" 
-                          style={{ backgroundColor: region.color }}
-                        />
-                        <span className="text-sm">{region.name}</span>
-                      </div>
-                      <span className="text-sm font-medium">{region.value}%</span>
-                    </div>
-                  ))}
+              {chartsLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
                 </div>
-              </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <RechartsPieChart>
+                      <Pie data={regionData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100}>
+                        {regionData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color ?? REGION_COLORS[index % REGION_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-3">
+                    {regionData.map((region, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: region.color ?? REGION_COLORS[index % REGION_COLORS.length] }}
+                          />
+                          <span className="text-sm">{region.name}</span>
+                        </div>
+                        <span className="text-sm font-medium">{region.value}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* Quick Actions & Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Quick Actions */}
         <Card>
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
@@ -336,12 +372,12 @@ export function Dashboard() {
           <CardContent className="space-y-3">
             {isAdmin ? (
               <>
-                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                <div className="flex items-center justify-between p-3 rounded-lg" style={{ backgroundColor: '#193cb81a' }}>
                   <div>
                     <p className="font-medium">Add New Station</p>
                     <p className="text-sm text-gray-600">Register a new transport station</p>
                   </div>
-                  <MapPin className="h-5 w-5 text-blue-600" />
+                  <MapPin className="h-5 w-5" style={{ color: '#193cb8' }} />
                 </div>
                 <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                   <div>
@@ -350,22 +386,22 @@ export function Dashboard() {
                   </div>
                   <Users className="h-5 w-5 text-green-600" />
                 </div>
-                <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
+                <div className="flex items-center justify-between p-3 rounded-lg" style={{ backgroundColor: '#193cb81a' }}>
                   <div>
                     <p className="font-medium">View Reports</p>
                     <p className="text-sm text-gray-600">Generate system-wide reports</p>
                   </div>
-                  <Calendar className="h-5 w-5 text-purple-600" />
+                  <Calendar className="h-5 w-5" style={{ color: '#193cb8' }} />
                 </div>
               </>
             ) : (
               <>
-                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                <div className="flex items-center justify-between p-3 rounded-lg" style={{ backgroundColor: '#193cb81a' }}>
                   <div>
                     <p className="font-medium">Book New Trip</p>
                     <p className="text-sm text-gray-600">Schedule a new passenger trip</p>
                   </div>
-                  <Route className="h-5 w-5 text-blue-600" />
+                  <Route className="h-5 w-5" style={{ color: '#193cb8' }} />
                 </div>
                 <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                   <div>
@@ -386,49 +422,56 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Activity */}
         <Card>
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {recentActivities.map((activity) => (
-                <div key={activity.id} className="flex items-start space-x-3">
-                  <div className="flex-shrink-0">
-                    {activity.type === 'incident' && (
-                      <div className="p-2 bg-red-100 rounded-full">
-                        <AlertTriangle className="h-4 w-4 text-red-600" />
-                      </div>
-                    )}
-                    {activity.type === 'trip' && (
-                      <div className="p-2 bg-blue-100 rounded-full">
-                        <Route className="h-4 w-4 text-blue-600" />
-                      </div>
-                    )}
-                    {activity.type === 'driver' && (
-                      <div className="p-2 bg-green-100 rounded-full">
-                        <Users className="h-4 w-4 text-green-600" />
-                      </div>
-                    )}
-                    {activity.type === 'maintenance' && (
-                      <div className="p-2 bg-orange-100 rounded-full">
-                        <Bus className="h-4 w-4 text-orange-600" />
-                      </div>
-                    )}
+              {activities.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No recent activity</p>
+              ) : (
+                activities.map((activity) => (
+                  <div key={activity.id} className="flex items-start space-x-3">
+                    <div className="flex-shrink-0">
+                      {activity.type === 'incident' && (
+                        <div className="p-2 bg-red-100 rounded-full">
+                          <AlertTriangle className="h-4 w-4 text-red-600" />
+                        </div>
+                      )}
+                      {activity.type === 'trip' && (
+                        <div className="p-2 rounded-full" style={{ backgroundColor: '#193cb833' }}>
+                          <Route className="h-4 w-4" style={{ color: '#193cb8' }} />
+                        </div>
+                      )}
+                      {activity.type === 'driver' && (
+                        <div className="p-2 bg-green-100 rounded-full">
+                          <Users className="h-4 w-4 text-green-600" />
+                        </div>
+                      )}
+                      {activity.type === 'maintenance' && (
+                        <div className="p-2 bg-orange-100 rounded-full">
+                          <Bus className="h-4 w-4 text-orange-600" />
+                        </div>
+                      )}
+                      {!['incident', 'trip', 'driver', 'maintenance'].includes(activity.type) && (
+                        <div className="p-2 bg-gray-100 rounded-full">
+                          <Calendar className="h-4 w-4 text-gray-600" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm">{activity.message}</p>
+                      <p className="text-xs text-gray-500">{activity.time}</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm">{activity.message}</p>
-                    <p className="text-xs text-gray-500">{activity.time}</p>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* System Status (Admin only) */}
       {isAdmin && (
         <Card>
           <CardHeader>
@@ -447,19 +490,21 @@ export function Dashboard() {
               </div>
               <div className="flex items-center justify-between p-4 bg-yellow-50 rounded-lg">
                 <div>
-                  <p className="font-medium text-yellow-900">3 Active Incidents</p>
+                  <p className="font-medium text-yellow-900">
+                    {stats?.activeIncidents ?? 0} Active Incidents
+                  </p>
                   <p className="text-sm text-yellow-700">Requires attention</p>
                 </div>
                 <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
                   Warning
                 </Badge>
               </div>
-              <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
+              <div className="flex items-center justify-between p-4 rounded-lg" style={{ backgroundColor: '#193cb81a' }}>
                 <div>
-                  <p className="font-medium text-blue-900">Database Backup</p>
-                  <p className="text-sm text-blue-700">Last backup: 2 hours ago</p>
+                  <p className="font-medium" style={{ color: '#193cb8' }}>Database Backup</p>
+                  <p className="text-sm" style={{ color: '#193cb8' }}>Last backup: 2 hours ago</p>
                 </div>
-                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                <Badge variant="secondary" style={{ backgroundColor: '#193cb833', color: '#193cb8' }}>
                   Scheduled
                 </Badge>
               </div>

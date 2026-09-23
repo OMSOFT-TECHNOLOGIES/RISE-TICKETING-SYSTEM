@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { authApi, removeAuthToken } from './utils/api';
 
 export type UserRole = 
   | 'super_admin' 
@@ -7,7 +8,8 @@ export type UserRole =
   | 'regional_manager' 
   | 'admin_operation' 
   | 'admin_hrm' 
-  | 'district_incident_reporter' 
+  | 'district_incident_reporter'
+  | 'station_manager'
   | 'station_worker';
 
 export interface User {
@@ -27,7 +29,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   user: User | null;
   login: (username: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
   hasPermission: (permission: string) => boolean;
   isSuperAdmin: () => boolean;
   isAdmin: () => boolean;
@@ -131,89 +133,52 @@ const rolePermissions: Record<UserRole, string[]> = {
     'view_reports' // Added for accident analysis access
   ],
   
-  // Station Worker - Limited to station operations
+  // Station Manager - Station-scoped leadership (fleet, staff, operations)
+  station_manager: [
+    'view_dashboard',
+    'manage_trips',
+    'manage_passengers',
+    'view_tickets',
+    'view_station_reports',
+    'manage_vehicles',
+    'manage_drivers',
+    'manage_basic_users',
+    'view_reports',
+  ],
+
+  // Station Worker - Station-scoped operations
   station_worker: [
-    'view_dashboard', 
-    'manage_trips', 
-    'manage_passengers', 
-    'view_station_reports'
-  ]
+    'view_dashboard',
+    'manage_trips',
+    'manage_passengers',
+    'view_tickets',
+    'view_station_reports',
+  ],
 };
 
-// Mock users with updated role structure
-const mockUsers: User[] = [
-  {
-    id: '1',
-    username: 'superadmin',
-    email: 'superadmin@rise.gov.gh',
-    fullName: 'Super Administrator',
-    role: 'super_admin',
-    permissions: rolePermissions.super_admin
-  },
-  {
-    id: '2',
-    username: 'admin',
-    email: 'admin@rise.gov.gh',
-    fullName: 'System Administrator',
-    role: 'admin',
-    permissions: rolePermissions.admin
-  },
-  {
-    id: '3',
-    username: 'rmgr_ashanti',
-    email: 'regional.ashanti@rise.gov.gh',
-    fullName: 'Kwame Asante',
-    role: 'regional_manager',
-    region: 'Ashanti',
-    permissions: rolePermissions.regional_manager
-  },
-  {
-    id: '4',
-    username: 'dmgr_kumasi',
-    email: 'district.kumasi@rise.gov.gh',
-    fullName: 'Akosua Mensah',
-    role: 'district_manager',
-    region: 'Ashanti',
-    district: 'Kumasi',
-    permissions: rolePermissions.district_manager
-  },
-  {
-    id: '5',
-    username: 'ops_admin',
-    email: 'operations@rise.gov.gh',
-    fullName: 'Yaw Boateng',
-    role: 'admin_operation',
-    permissions: rolePermissions.admin_operation
-  },
-  {
-    id: '6',
-    username: 'hr_admin',
-    email: 'hr@rise.gov.gh',
-    fullName: 'Ama Owusu',
-    role: 'admin_hrm',
-    permissions: rolePermissions.admin_hrm
-  },
-  {
-    id: '7',
-    username: 'incident_reporter',
-    email: 'incidents.accra@rise.gov.gh',
-    fullName: 'Kojo Asamoah',
-    role: 'district_incident_reporter',
-    region: 'Greater Accra',
-    district: 'Accra',
-    permissions: rolePermissions.district_incident_reporter
-  },
-  {
-    id: '8',
-    username: 'worker',
-    email: 'worker.station1@rise.gov.gh',
-    fullName: 'Adwoa Adjei',
-    role: 'station_worker',
-    stationId: 'ST001',
-    stationName: 'Accra Central Station',
-    permissions: rolePermissions.station_worker
-  }
-];
+function normalizeRole(role: string): UserRole {
+  const normalized = role?.toLowerCase().trim().replace(/[\s-]+/g, '_');
+  if (normalized === 'worker') return 'station_worker';
+  if (normalized === 'station_manager' || normalized === 'stationmanager') return 'station_manager';
+  if (normalized in rolePermissions) return normalized as UserRole;
+  return role as UserRole;
+}
+
+function mergePermissions(role: UserRole, backendPermissions: string[] = []): string[] {
+  const defaults = rolePermissions[role] || [];
+  return [...new Set([...defaults, ...backendPermissions])];
+}
+
+function buildUserFromAuth(
+  partial: Omit<User, 'permissions'> & { permissions?: string[] }
+): User {
+  const role = normalizeRole(partial.role);
+  return {
+    ...partial,
+    role,
+    permissions: mergePermissions(role, partial.permissions),
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -225,8 +190,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { isAuthenticated: stored, user: storedUser } = JSON.parse(storedAuth);
         if (stored && storedUser) {
+          const userData = buildUserFromAuth(storedUser);
           setIsAuthenticated(true);
-          setUser(storedUser);
+          setUser(userData);
+          localStorage.setItem(
+            'rise-auth',
+            JSON.stringify({ isAuthenticated: true, user: userData })
+          );
         }
       } catch (error) {
         console.error('Error parsing stored auth:', error);
@@ -235,33 +205,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = async (username: string, password: string): Promise<boolean> => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Simple authentication - in production, this would be handled by backend
-    const foundUser = mockUsers.find(u => u.username === username);
-    
-    if (foundUser && password === 'password') {
-      setIsAuthenticated(true);
-      setUser(foundUser);
-      
-      // Store authentication state
-      localStorage.setItem('rise-auth', JSON.stringify({
-        isAuthenticated: true,
-        user: foundUser
-      }));
-      
-      return true;
-    }
-    
-    return false;
+  const persistSession = (userData: User) => {
+    setIsAuthenticated(true);
+    setUser(userData);
+    localStorage.setItem(
+      'rise-auth',
+      JSON.stringify({ isAuthenticated: true, user: userData })
+    );
   };
 
-  const logout = () => {
-    setIsAuthenticated(false);
-    setUser(null);
-    localStorage.removeItem('rise-auth');
+  const login = async (username: string, password: string): Promise<boolean> => {
+    try {
+      const response = await authApi.login(username, password);
+
+      if (response.success && response.data) {
+        const userData = buildUserFromAuth({
+          id: response.data.user.id,
+          username: response.data.user.username,
+          email: response.data.user.email,
+          fullName: response.data.user.fullName,
+          role: response.data.user.role,
+          stationId: response.data.user.stationId,
+          stationName: response.data.user.stationName,
+          region: response.data.user.region,
+          district: response.data.user.district,
+          permissions: response.data.user.permissions,
+        });
+
+        persistSession(userData);
+        return true;
+      }
+
+      console.error('Login failed:', response.error);
+      return false;
+    } catch (error) {
+      console.error('Login exception:', error);
+      return false;
+    }
+  };
+
+  const logout = async () => {
+    try {
+      // Call backend logout endpoint
+      await authApi.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // Always clear local state even if API call fails
+      setIsAuthenticated(false);
+      setUser(null);
+      localStorage.removeItem('rise-auth');
+      removeAuthToken();
+    }
   };
 
   const hasPermission = (permission: string): boolean => {

@@ -5,19 +5,31 @@ Road Incidents Support and Emergency (RISE) Transport Management System - A comp
 ## 🚀 Features
 
 - **Admin Dashboard** - Complete overview with analytics and reporting
+- **Authentication System** - Secure login with JWT tokens and password reset
 - **Station Management** - Manage transport stations across regions
 - **Vehicle & Driver Management** - Fleet and personnel tracking
 - **Trip Booking System** - Real-time trip scheduling and passenger management
 - **Accident Analysis** - Safety monitoring and incident reporting
 - **Revenue Tracking** - Financial analytics and reporting
-- **User Management** - Role-based access control
+- **User Management** - Role-based access control with comprehensive permissions
 - **Ratings & Complaints** - Customer feedback system
 - **Mobile Responsive** - Optimized for all devices
+
+## 🔐 Authentication
+
+The application includes a complete authentication system:
+- **Login/Logout** - Secure authentication with JWT tokens
+- **Forgot Password** - Email-based password reset flow
+- **Password Reset** - Secure token-based password update
+- **Role-Based Access** - 8 different user roles with specific permissions
+
+For backend integration details, see [API Integration Guide](./guidelines/API_INTEGRATION_GUIDE.md)
 
 ## 🛠️ Tech Stack
 
 - **React 18** with TypeScript
 - **Vite** for fast development and building
+- **Backend API** - RESTful API on http://localhost:8081
 - **Tailwind CSS v4** for styling
 - **Radix UI** components for accessibility
 - **Recharts** for data visualization
@@ -145,12 +157,13 @@ The production build includes:
 
 ### Environment Setup
 
-Create `.env` file for environment variables:
+| Command | Mode | Config |
+|---------|------|--------|
+| `npm run dev` | development | `.env.development` + `.env.local` |
+| `npm run build` | production | `.env.production` + Vercel env vars |
 
-```env
-VITE_APP_NAME=RISE Transport System
-VITE_API_URL=your-api-url
-```
+Copy `.env.example` to `.env.local` for local secrets (Google Maps key).  
+For Vercel, use `.env.vercel.example` as the variable checklist in **Project → Settings → Environment Variables**.
 
 ## 🤝 Contributing
 

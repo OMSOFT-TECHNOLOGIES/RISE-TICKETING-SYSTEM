@@ -34,7 +34,10 @@ import {
   Ticket
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { toast } from 'sonner';
+import { notify } from './utils/notify';
+import { StationWorkerQuickActions } from './StationWorkerQuickActions';
+import { isStationOperationsRole } from './constants/userRoles';
+import { cn } from './ui/utils';
 
 interface QuickActionDialogProps {
   open: boolean;
@@ -43,7 +46,18 @@ interface QuickActionDialogProps {
 
 export function QuickActionDialog({ open, onOpenChange }: QuickActionDialogProps) {
   const { user } = useAuth();
+
+  if (isStationOperationsRole(user?.role)) {
+    return <StationWorkerQuickActions open={open} onOpenChange={onOpenChange} />;
+  }
+
+  return <AdminQuickActionDialog open={open} onOpenChange={onOpenChange} />;
+}
+
+function AdminQuickActionDialog({ open, onOpenChange }: QuickActionDialogProps) {
+  const { user, hasPermission, isAdmin, isSuperAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState('booking');
+  const isAdminUser = isAdmin() || isSuperAdmin();
 
   // Trip Booking Form State
   const [tripForm, setTripForm] = useState({
@@ -79,13 +93,13 @@ export function QuickActionDialog({ open, onOpenChange }: QuickActionDialogProps
 
   const handleTripBooking = () => {
     if (!tripForm.passengerName || !tripForm.passengerPhone || !tripForm.route) {
-      toast.error('Please fill in all required fields');
+      notify.error('Please fill in all required fields');
       return;
     }
 
     // Simulate API call
     setTimeout(() => {
-      toast.success(`Trip booked successfully for ${tripForm.passengerName}`);
+      notify.success(`Trip booked successfully for ${tripForm.passengerName}`);
       setTripForm({
         passengerName: '',
         passengerPhone: '',
@@ -102,13 +116,13 @@ export function QuickActionDialog({ open, onOpenChange }: QuickActionDialogProps
 
   const handleUserCreation = () => {
     if (!userForm.name || !userForm.email || !userForm.password) {
-      toast.error('Please fill in all required fields');
+      notify.error('Please fill in all required fields');
       return;
     }
 
     // Simulate API call
     setTimeout(() => {
-      toast.success(`User ${userForm.name} created successfully`);
+      notify.success(`User ${userForm.name} created successfully`);
       setUserForm({
         name: '',
         email: '',
@@ -123,13 +137,13 @@ export function QuickActionDialog({ open, onOpenChange }: QuickActionDialogProps
 
   const handleVehicleRegistration = () => {
     if (!vehicleForm.registrationNumber || !vehicleForm.make || !vehicleForm.model) {
-      toast.error('Please fill in all required fields');
+      notify.error('Please fill in all required fields');
       return;
     }
 
     // Simulate API call
     setTimeout(() => {
-      toast.success(`Vehicle ${vehicleForm.registrationNumber} registered successfully`);
+      notify.success(`Vehicle ${vehicleForm.registrationNumber} registered successfully`);
       setVehicleForm({
         registrationNumber: '',
         make: '',
@@ -142,44 +156,50 @@ export function QuickActionDialog({ open, onOpenChange }: QuickActionDialogProps
     }, 500);
   };
 
-  const quickActions = user?.role === 'admin' ? [
-    {
-      id: 'user',
-      title: 'Add User',
-      description: 'Create new admin or worker account',
-      icon: Users,
-      color: 'text-blue-600'
-    },
-    {
-      id: 'booking',
-      title: 'Book Trip',
-      description: 'Quick passenger trip booking',
-      icon: Route,
-      color: 'text-green-600'
-    },
-    {
-      id: 'vehicle',
-      title: 'Add Vehicle',
-      description: 'Register new vehicle',
-      icon: Bus,
-      color: 'text-purple-600'
-    }
-  ] : [
-    {
-      id: 'booking',
-      title: 'Book Trip',
-      description: 'Quick passenger trip booking',
-      icon: Route,
-      color: 'text-green-600'
-    },
-    {
-      id: 'vehicle',
-      title: 'Add Vehicle',
-      description: 'Register new vehicle',
-      icon: Bus,
-      color: 'text-purple-600'
-    }
-  ];
+  const quickActions = isAdminUser
+    ? [
+        {
+          id: 'user',
+          title: 'Add User',
+          description: 'Create new admin or worker account',
+          icon: Users,
+          color: 'text-[#193cb8]',
+        },
+        {
+          id: 'booking',
+          title: 'Book Trip',
+          description: 'Quick passenger trip booking',
+          icon: Route,
+          color: 'text-green-600',
+        },
+        {
+          id: 'vehicle',
+          title: 'Add Vehicle',
+          description: 'Register new vehicle',
+          icon: Bus,
+          color: 'text-purple-600',
+        },
+      ]
+    : [
+        {
+          id: 'booking',
+          title: 'Book Trip',
+          description: 'Quick passenger trip booking',
+          icon: Route,
+          color: 'text-green-600',
+        },
+        ...(hasPermission('manage_vehicles')
+          ? [
+              {
+                id: 'vehicle',
+                title: 'Add Vehicle',
+                description: 'Register new vehicle',
+                icon: Bus,
+                color: 'text-purple-600',
+              },
+            ]
+          : []),
+      ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -195,7 +215,16 @@ export function QuickActionDialog({ open, onOpenChange }: QuickActionDialogProps
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList
+            className={cn(
+              'grid w-full',
+              quickActions.length === 3
+                ? 'grid-cols-3'
+                : quickActions.length === 2
+                  ? 'grid-cols-2'
+                  : 'grid-cols-1'
+            )}
+          >
             {quickActions.map((action) => (
               <TabsTrigger 
                 key={action.id} 
@@ -317,12 +346,12 @@ export function QuickActionDialog({ open, onOpenChange }: QuickActionDialogProps
           </TabsContent>
 
           {/* User Creation Tab (Admin only) */}
-          {user?.role === 'admin' && (
+          {isAdminUser && (
             <TabsContent value="user" className="space-y-4">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Users className="h-5 w-5 text-blue-600" />
+                    <Users className="h-5 w-5 text-[#193cb8]" />
                     Create New User
                   </CardTitle>
                   <CardDescription>
@@ -470,7 +499,7 @@ export function QuickActionDialog({ open, onOpenChange }: QuickActionDialogProps
                       </SelectContent>
                     </Select>
                   </div>
-                  {user?.role === 'admin' && (
+                  {isAdminUser && (
                     <div className="space-y-2">
                       <Label htmlFor="vehicle-station">Station</Label>
                       <Select value={vehicleForm.stationId} onValueChange={(value) => setVehicleForm({...vehicleForm, stationId: value})}>
