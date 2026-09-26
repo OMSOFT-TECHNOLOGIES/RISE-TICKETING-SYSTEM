@@ -5,6 +5,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
@@ -57,8 +58,8 @@ export function StationWorkerQuickActions({ open, onOpenChange }: StationWorkerQ
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0 gap-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+      <DialogContent className="flex max-w-md flex-col gap-0 p-0">
+        <DialogHeader>
           <DialogTitle>Quick Actions</DialogTitle>
           <DialogDescription>
             {user?.stationName
@@ -67,7 +68,7 @@ export function StationWorkerQuickActions({ open, onOpenChange }: StationWorkerQ
           </DialogDescription>
         </DialogHeader>
 
-        <div className="p-4 space-y-2">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-4">
           {ACTIONS.map(({ id, page, title, description, icon: Icon, accent, iconBg }) => (
             <button
               key={id}
@@ -86,11 +87,11 @@ export function StationWorkerQuickActions({ open, onOpenChange }: StationWorkerQ
           ))}
         </div>
 
-        <div className="px-6 py-4 border-t bg-muted/10">
+        <DialogFooter className="sm:justify-stretch">
           <Button variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

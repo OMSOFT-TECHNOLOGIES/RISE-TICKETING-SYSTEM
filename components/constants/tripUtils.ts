@@ -1,11 +1,11 @@
+import { calculateTierInfo, getDefaultTripTiers } from '../utils/tripTier';
+
 export const calculateTripTier = (baseFare: number): { tier: 1 | 2 | 3; penalty: number } => {
-  if (baseFare <= 29) {
-    return { tier: 1, penalty: 0.5 };
-  }
-  if (baseFare <= 59) {
-    return { tier: 2, penalty: 1.0 };
-  }
-  return { tier: 3, penalty: 2.0 };
+  const info = calculateTierInfo(getDefaultTripTiers(), baseFare, 1);
+  return {
+    tier: info.tier.id as 1 | 2 | 3,
+    penalty: info.commissionPerPassenger,
+  };
 };
 
 export const generateStationCode = (name: string, region: string, index: number): string => {

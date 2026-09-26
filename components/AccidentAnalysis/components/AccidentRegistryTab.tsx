@@ -5,28 +5,39 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
+import type { ListPagination } from '../../utils/api/client';
 import type { Accident, AccidentFilters } from '../types';
+import { TablePagination } from '../../shared/TablePagination';
 import { formatAccidentDate } from '../utils';
 import { SeverityBadge } from './SeverityBadge';
 import { StatusBadge } from './StatusBadge';
 
 interface AccidentRegistryTabProps {
   accidents: Accident[];
+  totalMatching?: number;
   filters: AccidentFilters;
   onFiltersChange: (updates: Partial<AccidentFilters>) => void;
   onViewAccident: (accident: Accident) => void;
   onReportClick: () => void;
   onExportClick: () => void;
+  page?: number;
+  pagination?: ListPagination | null;
+  onPageChange?: (page: number) => void;
 }
 
 export function AccidentRegistryTab({
   accidents,
+  totalMatching,
   filters,
   onFiltersChange,
   onViewAccident,
   onReportClick,
   onExportClick,
+  page = 1,
+  pagination = null,
+  onPageChange,
 }: AccidentRegistryTabProps) {
+  const matchCount = totalMatching ?? accidents.length;
   return (
     <div className="space-y-4">
       <div className="flex flex-col lg:flex-row gap-4 lg:items-end">
@@ -87,7 +98,7 @@ export function AccidentRegistryTab({
         <div className="px-5 py-4 border-b">
           <h3 className="text-sm font-semibold">Accident Records</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {accidents.length} record{accidents.length !== 1 ? 's' : ''} matching filters
+            {matchCount} record{matchCount !== 1 ? 's' : ''} matching filters
           </p>
         </div>
         <Table>
@@ -149,6 +160,15 @@ export function AccidentRegistryTab({
             )}
           </TableBody>
         </Table>
+        {onPageChange ? (
+          <TablePagination
+            page={page}
+            pagination={pagination}
+            onPageChange={onPageChange}
+            itemLabel="records"
+            className="px-5"
+          />
+        ) : null}
       </div>
     </div>
   );

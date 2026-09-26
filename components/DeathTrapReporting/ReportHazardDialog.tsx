@@ -85,7 +85,7 @@ export function ReportHazardDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0">
+      <DialogContent className="flex max-w-3xl flex-col gap-0 p-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <div className="flex items-start gap-3">
             <div className="rounded-lg bg-red-50 border border-red-200/60 p-2.5 shrink-0">
@@ -130,7 +130,7 @@ export function ReportHazardDialog({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
           {step === 1 && (
             <div className="space-y-6">
               <div className="space-y-3">

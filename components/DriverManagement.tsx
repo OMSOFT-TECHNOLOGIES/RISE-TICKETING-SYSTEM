@@ -25,12 +25,15 @@ import { driverApi, vehicleApi, parseListResponse } from './utils/api';
 import { isGlobalDataScope, listParamsForDataEntry } from './utils/stationScope';
 import { useDataEntryStation } from './shared/hooks/useDataEntryStation';
 import { DataEntryStationBanner } from './shared/DataEntryStationBanner';
+import { formatStationRefId } from './utils/stationPicker';
+import { StationFormSelect } from './shared/StationFormSelect';
 import {
   toDriverApiPayload,
   formatDriverLicenseExpiry,
   driverEmergencyContactLabel,
 } from './utils/driverForm';
-import { useEntityList } from './shared/hooks/useEntityList';
+import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
+import { TablePagination } from './shared/TablePagination';
 import { Alert, AlertDescription } from './ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -52,6 +55,22 @@ function formatVehicleRefId(id: number | string): string {
   const numeric = typeof id === 'number' ? id : parseInt(String(id), 10);
   if (Number.isNaN(numeric)) return String(id);
   return `VEH${String(numeric).padStart(3, '0')}`;
+}
+
+function driverStationLabel(
+  driver: DriverRecord,
+  stationNameById: Map<string, string>
+): string {
+  const name = driver.stationName;
+  if (name != null && String(name).trim()) {
+    return String(name);
+  }
+  const sid = formatStationRefId(driver.stationId);
+  if (sid && stationNameById.has(sid)) {
+    return stationNameById.get(sid)!;
+  }
+  if (sid) return sid;
+  return '—';
 }
 
 function vehicleLabelForDriver(
@@ -83,7 +102,10 @@ export function DriverManagement() {
   const dataEntry = useDataEntryStation();
 
   const fetchDrivers = useCallback(
-    () => driverApi.getAll(listParamsForDataEntry(user, dataEntry.effectiveStationId, { limit: 200 })),
+    (page: number, limit: number) =>
+      driverApi.getAll(
+        listParamsForDataEntry(user, dataEntry.effectiveStationId, { page, limit })
+      ),
     [user, dataEntry.effectiveStationId]
   );
 
@@ -94,13 +116,17 @@ export function DriverManagement() {
     refresh,
     isSubmitting,
     setIsSubmitting,
-  } = useEntityList<DriverRecord>({
+    page,
+    setPage,
+    pagination,
+  } = usePaginatedEntityList<DriverRecord>({
     fetchFn: fetchDrivers,
     entityKey: 'drivers',
     errorMessage: 'Failed to load drivers',
   });
 
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [registerStationId, setRegisterStationId] = useState('');
   const [selectedDriver, setSelectedDriver] = useState<any>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [newDriver, setNewDriver] = useState({
@@ -132,7 +158,20 @@ export function DriverManagement() {
     status: 'active',
   });
 
-  const userDrivers = isGlobalUser ? drivers : drivers.filter((d) => d.stationId === user?.stationId);
+  const stationNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const station of dataEntry.stations) {
+      map.set(station.id, station.name);
+    }
+    return map;
+  }, [dataEntry.stations]);
+
+  const userDrivers = useMemo(() => {
+    if (isGlobalUser) return drivers;
+    const scopedId = formatStationRefId(user?.stationId);
+    if (!scopedId) return drivers;
+    return drivers.filter((d) => formatStationRefId(d.stationId) === scopedId);
+  }, [drivers, isGlobalUser, user?.stationId]);
 
   const loadVehicles = useCallback(async () => {
     try {
@@ -156,6 +195,13 @@ export function DriverManagement() {
   useEffect(() => {
     void loadVehicles();
   }, [loadVehicles]);
+
+  useEffect(() => {
+    if (!showAddDialog) return;
+    const sid =
+      dataEntry.effectiveStationId || formatStationRefId(user?.stationId) || '';
+    setRegisterStationId(sid);
+  }, [showAddDialog, dataEntry.effectiveStationId, user?.stationId]);
 
   const vehiclesById = useMemo(() => {
     const map = new Map<string, VehicleOption>();
@@ -296,8 +342,14 @@ export function DriverManagement() {
       return;
     }
 
-    const sid = dataEntry.requireStationId();
-    if (!sid) return;
+    const sid =
+      dataEntry.needsPicker || isGlobalUser
+        ? registerStationId
+        : dataEntry.effectiveStationId || formatStationRefId(user?.stationId);
+    if (!sid) {
+      notify.error('Select a station for this driver');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -410,12 +462,10 @@ export function DriverManagement() {
           <p>{vehicleLabelForDriver(driver, vehiclesById)}</p>
         </div>
 
-        {isGlobalUser && (
-          <div className="text-sm">
-            <p className="font-medium text-gray-700">Station</p>
-            <p>{driver.stationName}</p>
-          </div>
-        )}
+        <div className="text-sm">
+          <p className="font-medium text-gray-700">Station</p>
+          <p>{driverStationLabel(driver, stationNameById)}</p>
+        </div>
 
         <div className="flex items-center justify-between pt-4 border-t">
           <div className="text-sm">
@@ -493,7 +543,7 @@ export function DriverManagement() {
               Register Driver
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Register New Driver</DialogTitle>
               <DialogDescription>
@@ -501,6 +551,13 @@ export function DriverManagement() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              {(dataEntry.needsPicker || isGlobalUser) && (
+                <StationFormSelect
+                  value={registerStationId}
+                  stations={dataEntry.stations}
+                  onChange={setRegisterStationId}
+                />
+              )}
               <div>
                 <Label htmlFor="driverName">Full Name</Label>
                 <Input
@@ -549,6 +606,9 @@ export function DriverManagement() {
                     value={newDriver.licenseExpiry}
                     onChange={(e) => setNewDriver({...newDriver, licenseExpiry: e.target.value})}
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    SMS reminders are sent 7 days, 3 days, and on the expiry date.
+                  </p>
                 </div>
               </div>
               <div>
@@ -649,7 +709,7 @@ export function DriverManagement() {
                   <TableHead>Status</TableHead>
                   <TableHead>Vehicle</TableHead>
                   <TableHead>Rating</TableHead>
-                  {isGlobalUser && <TableHead>Station</TableHead>}
+                  <TableHead>Station</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -677,7 +737,7 @@ export function DriverManagement() {
                     <TableCell>{getStatusBadge(driver.status)}</TableCell>
                     <TableCell>{vehicleLabelForDriver(driver, vehiclesById)}</TableCell>
                     <TableCell>⭐ {driver.rating}/5.0</TableCell>
-                    {isGlobalUser && <TableCell>{driver.stationName}</TableCell>}
+                    <TableCell>{driverStationLabel(driver, stationNameById)}</TableCell>
                     <TableCell>
                       <div className="flex space-x-2">
                         <Button 
@@ -702,6 +762,13 @@ export function DriverManagement() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination
+              page={page}
+              pagination={pagination}
+              onPageChange={setPage}
+              loading={loading}
+              itemLabel="drivers"
+            />
           </CardContent>
         </Card>
       </div>
@@ -715,7 +782,7 @@ export function DriverManagement() {
 
       {/* Edit Driver Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Driver</DialogTitle>
             <DialogDescription>Update driver profile and status</DialogDescription>
@@ -909,6 +976,10 @@ export function DriverManagement() {
               <div className="text-sm">
                 <p className="font-medium text-gray-700">Address</p>
                 <p>{selectedDriver.address}</p>
+              </div>
+              <div className="text-sm">
+                <p className="font-medium text-gray-700">Station</p>
+                <p>{driverStationLabel(selectedDriver, stationNameById)}</p>
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>

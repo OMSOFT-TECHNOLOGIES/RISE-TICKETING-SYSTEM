@@ -35,6 +35,7 @@ import { RevenueSourcesSection } from './AccountManagement/components/RevenueSou
 import { BudgetsSection } from './AccountManagement/components/BudgetsSection';
 import { ReportsSection } from './AccountManagement/components/ReportsSection';
 import { AccountDialogs } from './AccountManagement/components/AccountDialogs';
+import { useClientPagination } from './shared/hooks/useClientPagination';
 
 export function AccountManagement() {
   const { user, hasPermission, isSuperAdmin } = useAuth();
@@ -175,6 +176,14 @@ export function AccountManagement() {
     () => filterTransactions(transactions, searchQuery, filterStatus, filterCategory),
     [transactions, searchQuery, filterStatus, filterCategory]
   );
+
+  const transactionResetKey = `${searchQuery}|${filterStatus}|${filterCategory}`;
+  const {
+    paginatedItems: pagedTransactions,
+    page: transactionPage,
+    setPage: setTransactionPage,
+    pagination: transactionPagination,
+  } = useClientPagination(filteredTransactions, undefined, transactionResetKey);
 
   const canEdit = (transaction: Transaction) =>
     isSuperAdmin() || transaction.createdBy === user?.id;
@@ -334,7 +343,8 @@ export function AccountManagement() {
 
                 <TabsContent value="transactions" className="mt-0">
                   <TransactionsSection
-                    transactions={filteredTransactions}
+                    transactions={pagedTransactions}
+                    totalMatching={filteredTransactions.length}
                     searchQuery={searchQuery}
                     setSearchQuery={setSearchQuery}
                     filterStatus={filterStatus}
@@ -345,6 +355,9 @@ export function AccountManagement() {
                     canEdit={canEdit}
                     userId={user?.id}
                     isSuperAdmin={isSuperAdmin()}
+                    page={transactionPage}
+                    pagination={transactionPagination}
+                    onPageChange={setTransactionPage}
                   />
                 </TabsContent>
 

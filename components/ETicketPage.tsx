@@ -5,6 +5,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { ticketApi } from './utils/api';
 import type { ETicket } from './utils/eTicket.types';
+import { formatTicketDateTime } from './utils/tripDateTime';
 
 interface ETicketPageProps {
   token: string;
@@ -66,7 +67,7 @@ export function ETicketPage({ token }: ETicketPageProps) {
     );
   }
 
-  const departureDate = new Date(ticket.departureTime);
+  const departure = formatTicketDateTime(ticket.departureTime);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#193cb8]/5 to-background p-4 sm:p-8">
@@ -101,15 +102,12 @@ export function ETicketPage({ token }: ETicketPageProps) {
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span>{departureDate.toLocaleDateString('en-GH')}</span>
+                <span>{departure.date || '—'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <span>
-                  {departureDate.toLocaleTimeString('en-GH', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  {departure.time || '—'}
                 </span>
               </div>
               <div className="flex items-center gap-2">

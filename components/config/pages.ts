@@ -78,6 +78,17 @@ export const STATION_MANAGER_PAGES: PageId[] = [
 
 export const DEFAULT_PAGE: PageId = 'dashboard';
 
+/** Sidebar order under Core Operations (after Dashboard). */
+export const CORE_OPERATIONS_ORDER: PageId[] = [
+  'dashboard',
+  'unions',
+  'stations',
+  'drivers',
+  'vehicles',
+  'trips',
+  'passengers',
+];
+
 export const PAGES: PageConfig[] = [
   {
     id: 'dashboard',
@@ -86,38 +97,38 @@ export const PAGES: PageConfig[] = [
     section: 'core',
   },
   {
-    id: 'stations',
-    title: 'Station Management',
-    permission: 'manage_stations',
-    section: 'core',
-  },
-  {
     id: 'unions',
-    title: 'Union Management',
+    title: 'Union Registration',
     permission: 'manage_unions',
     section: 'core',
     restrictedAccess: true,
     restriction: {
-      title: 'Union Management Restricted',
-      message: 'Union management requires regional or administrative privileges.',
+      title: 'Union Registration Restricted',
+      message: 'Union registration requires regional or administrative privileges.',
       suggestion: 'This feature is restricted to strategic-level operations.',
     },
   },
   {
-    id: 'vehicles',
-    title: 'Vehicle Management',
-    permission: 'manage_vehicles',
+    id: 'stations',
+    title: 'Station Registration',
+    permission: 'manage_stations',
     section: 'core',
   },
   {
     id: 'drivers',
-    title: 'Driver Management',
+    title: 'Driver Registration',
     permission: 'manage_drivers',
     section: 'core',
   },
   {
+    id: 'vehicles',
+    title: 'Vehicle Registration',
+    permission: 'manage_vehicles',
+    section: 'core',
+  },
+  {
     id: 'trips',
-    title: 'Trip Management',
+    title: 'Trip Registration',
     permission: 'manage_trips',
     section: 'core',
   },
@@ -249,7 +260,19 @@ export function getPageConfig(pageId: string): PageConfig | undefined {
 }
 
 export function getPagesBySection(section: NavSection): PageConfig[] {
-  return PAGES.filter((page) => page.section === section);
+  const pages = PAGES.filter((page) => page.section === section);
+  if (section !== 'core') {
+    return pages;
+  }
+
+  return [...pages].sort((a, b) => {
+    const ai = CORE_OPERATIONS_ORDER.indexOf(a.id);
+    const bi = CORE_OPERATIONS_ORDER.indexOf(b.id);
+    if (ai === -1 && bi === -1) return 0;
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
 }
 
 export function isSafetyIncidentPage(pageId: string): boolean {

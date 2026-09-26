@@ -29,6 +29,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { userRoles } from './constants/userRoles';
 import { formatDate, getStatusBadgeClass, getRoleBadgeClass } from './utils/helpers';
 import { userApi, parseListResponse } from './utils/api';
+import { TablePagination } from './shared/TablePagination';
+import type { ListPagination } from './utils/api/client';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -172,6 +174,15 @@ export function UserManagement() {
       setLoading(false);
     }
   }, [page, roleFilter, searchTerm, statusFilter]);
+
+  const listPagination: ListPagination | null = pagination
+    ? {
+        page,
+        limit: 50,
+        totalItems: pagination.total,
+        totalPages: pagination.totalPages,
+      }
+    : null;
 
   useEffect(() => {
     fetchUsers();
@@ -514,7 +525,7 @@ export function UserManagement() {
               Add User
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl">
             <DialogHeader className="space-y-3 pb-4 border-b">
               <DialogTitle className="flex items-center gap-3 text-2xl">
                 <div className="p-2 bg-[#193cb8]/10 rounded-lg">
@@ -1096,31 +1107,13 @@ export function UserManagement() {
             </TableBody>
           </Table>
           )}
-          {pagination && pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between pt-4 border-t mt-4">
-              <p className="text-sm text-muted-foreground">
-                Page {page} of {pagination.totalPages} ({pagination.total} users)
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 1 || loading}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page >= pagination.totalPages || loading}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
+          <TablePagination
+            page={page}
+            pagination={listPagination}
+            onPageChange={setPage}
+            loading={loading}
+            itemLabel="users"
+          />
         </CardContent>
       </Card>
 

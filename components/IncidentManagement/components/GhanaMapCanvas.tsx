@@ -164,7 +164,7 @@ export function GhanaMapCanvas({
               isDark ? 'bg-slate-800/90 border-slate-700 text-slate-200' : 'bg-white/95 border-slate-200'
             }`}
           >
-            <p className="font-medium">Ghana — Live Incident Map</p>
+            <p className="font-medium">Google Maps — live incident view (Ghana)</p>
             <p className={isDark ? 'text-slate-400' : 'text-muted-foreground'}>
               {singleMarker ? 'Single location' : `${plottedCount} plotted`}
             </p>

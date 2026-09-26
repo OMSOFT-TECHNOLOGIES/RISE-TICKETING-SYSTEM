@@ -2,6 +2,7 @@ import { notify } from './notify';
 import { passengerApi } from './api/passengers';
 import { ticketApi } from './api/tickets';
 import { formatApiError } from './api/client';
+import { formatTicketDateTime, getTripDepartureIso } from './tripDateTime';
 import type {
   ETicket,
   BookPassengerInput,
@@ -28,7 +29,12 @@ export function mapApiTicket(data: Record<string, unknown>): ETicket {
     passengerEmail: data.passengerEmail as string | undefined,
     routeFrom: String(data.routeFrom ?? ''),
     routeTo: String(data.routeTo ?? ''),
-    departureTime: String(data.departureTime ?? ''),
+    departureTime:
+      getTripDepartureIso({
+        departureTime: data.departureTime,
+        departureDate: data.departureDate,
+        departureTimeOnly: data.departureTimeOnly,
+      }) || String(data.departureTime ?? ''),
     arrivalTime: data.arrivalTime as string | undefined,
     seatNumber: String(data.seatNumber ?? 'TBD'),
     fare: Number(data.fare ?? 0),
@@ -37,6 +43,9 @@ export function mapApiTicket(data: Record<string, unknown>): ETicket {
     driver: String(data.driver ?? 'TBD'),
     status: (data.status as ETicket['status']) ?? 'confirmed',
     qrCode: String(data.qrCode ?? ''),
+    driverReportToken: data.driverReportToken as string | undefined,
+    driverReportExpiresAt: data.driverReportExpiresAt as string | undefined,
+    branchPhone: data.branchPhone as string | undefined,
     eTicketUrl: String(data.eTicketUrl ?? buildETicketUrl(String(data.token ?? ''))),
     stationId: String(data.stationId ?? ''),
     stationName: String(data.stationName ?? ''),
@@ -49,20 +58,19 @@ export function mapApiTicket(data: Record<string, unknown>): ETicket {
   };
 }
 
-function formatTicketDateTime(iso: string): { date: string; time: string } {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) {
-    return { date: iso, time: '' };
-  }
-  return {
-    date: parsed.toLocaleDateString('en-GH'),
-    time: parsed.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' }),
-  };
+function qrImageUrl(data: string): string {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(data)}`;
 }
 
 function buildTicketPrintHtml(ticket: ETicket): string {
   const departure = formatTicketDateTime(ticket.departureTime);
   const booked = formatTicketDateTime(ticket.bookingDate);
+  const reportUrl =
+    ticket.qrCode && ticket.qrCode.startsWith('http')
+      ? ticket.qrCode
+      : ticket.driverReportToken
+        ? `${typeof window !== 'undefined' ? window.location.origin : ''}/report-driver/${ticket.driverReportToken}`
+        : '';
   const safe = (value: string) =>
     value
       .replace(/&/g, '&amp;')
@@ -89,11 +97,23 @@ function buildTicketPrintHtml(ticket: ETicket): string {
       border: 1px dashed #193cb8;
       padding: 12px;
     }
+    .logos {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .logos img {
+      height: 32px;
+      width: auto;
+      max-width: 48%;
+    }
     .brand {
       text-align: center;
       color: #193cb8;
       font-weight: 700;
-      font-size: 14px;
+      font-size: 12px;
       margin-bottom: 4px;
     }
     .station {
@@ -122,9 +142,17 @@ function buildTicketPrintHtml(ticket: ETicket): string {
       padding: 10px;
       border: 1px solid #ddd;
       text-align: center;
-      font-family: monospace;
-      font-size: 10px;
-      word-break: break-all;
+    }
+    .qr img {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 6px;
+      display: block;
+    }
+    .qr-caption {
+      font-size: 9px;
+      color: #444;
+      line-height: 1.3;
     }
     .footer {
       margin-top: 10px;
@@ -136,8 +164,17 @@ function buildTicketPrintHtml(ticket: ETicket): string {
 </head>
 <body>
   <div class="ticket">
-    <div class="brand">RISE E-TICKET</div>
+    <div class="logos">
+      <img src="/logos/rise-ghana.svg" alt="RISE Ghana" />
+      <img src="/logos/ministry-transport.svg" alt="Ministry of Transport" />
+    </div>
+    <div class="brand">RISE GHANA · E-TICKET</div>
     <div class="station">${safe(ticket.stationName || 'RISE Station')}</div>
+    ${
+      ticket.branchPhone
+        ? `<div class="row"><span class="label">Branch office</span><span class="value">${safe(ticket.branchPhone)}</span></div>`
+        : ''
+    }
     <div class="route">${safe(ticket.routeFrom)} → ${safe(ticket.routeTo)}</div>
     <div class="row"><span class="label">Ticket</span><span class="value">${safe(ticket.id)}</span></div>
     <div class="row"><span class="label">Passenger</span><span class="value">${safe(ticket.passengerName)}</span></div>
@@ -155,8 +192,15 @@ function buildTicketPrintHtml(ticket: ETicket): string {
         ? `<div class="row"><span class="label">Driver</span><span class="value">${safe(ticket.driver)}</span></div>`
         : ''
     }
-    <div class="qr">${safe(ticket.qrCode || ticket.token || ticket.id)}<br/>Show at boarding</div>
-    <div class="footer">Booked ${safe(booked.date)} ${safe(booked.time)}</div>
+    ${
+      reportUrl
+        ? `<div class="qr">
+      <img src="${qrImageUrl(reportUrl)}" alt="Driver report QR" />
+      <div class="qr-caption">Scan to report unsafe driving (valid 12 hours)</div>
+    </div>`
+        : ''
+    }
+    <div class="footer">Booked ${safe(booked.date)} ${safe(booked.time)} · Show at boarding</div>
   </div>
   <script>
     window.onload = function() {
@@ -217,7 +261,7 @@ export async function issueETicket(
     boardingPoint: input.routeFrom,
     dropoffPoint: input.routeTo,
     fare: input.fare,
-    seats: input.seats,
+    seats: 1,
     emergencyContactName: input.emergencyContactName,
     emergencyContactPhone: input.emergencyContactPhone,
     emergencyContactRelationship: input.emergencyContactRelationship,

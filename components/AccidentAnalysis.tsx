@@ -6,6 +6,7 @@ import { notify } from './utils/notify';
 import { accidentApi, vehicleApi, parseListResponse } from './utils/api';
 import { listParamsForUser } from './utils/stationScope';
 import { useEntityList } from './shared/hooks/useEntityList';
+import { useClientPagination } from './shared/hooks/useClientPagination';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent } from './ui/card';
 import { ACCIDENT_TAB_TRIGGER_CLASS, DEFAULT_NEW_ACCIDENT } from './AccidentAnalysis/constants';
@@ -72,6 +73,14 @@ export function AccidentAnalysis() {
     () => filterAccidents(accidents, filters),
     [accidents, filters]
   );
+
+  const accidentResetKey = `${filters.search}|${filters.severity}|${filters.status}`;
+  const {
+    paginatedItems: pagedAccidents,
+    page: accidentPage,
+    setPage: setAccidentPage,
+    pagination: accidentPagination,
+  } = useClientPagination(filteredAccidents, undefined, accidentResetKey);
 
   const stats = useMemo(() => calculateStats(accidents), [accidents]);
   const criticalCount = useMemo(
@@ -293,12 +302,16 @@ export function AccidentAnalysis() {
 
                 <TabsContent value="accidents" className="mt-0">
                   <AccidentRegistryTab
-                    accidents={filteredAccidents}
+                    accidents={pagedAccidents}
+                    totalMatching={filteredAccidents.length}
                     filters={filters}
                     onFiltersChange={(updates) => setFilters((prev) => ({ ...prev, ...updates }))}
                     onViewAccident={handleViewAccident}
                     onReportClick={() => setShowReportDialog(true)}
                     onExportClick={exportData}
+                    page={accidentPage}
+                    pagination={accidentPagination}
+                    onPageChange={setAccidentPage}
                   />
                 </TabsContent>
 

@@ -18,6 +18,9 @@ export interface ETicket {
   driver: string;
   status: 'confirmed' | 'pending' | 'used' | 'cancelled';
   qrCode: string;
+  driverReportToken?: string;
+  driverReportExpiresAt?: string;
+  branchPhone?: string;
   eTicketUrl: string;
   stationId: string;
   stationName: string;

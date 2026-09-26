@@ -42,8 +42,10 @@ import {
   type ETicket,
 } from './utils/eTicket';
 import { ticketApi } from './utils/api';
-import { useEntityList } from './shared/hooks/useEntityList';
+import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
+import { TablePagination } from './shared/TablePagination';
 import { Alert, AlertDescription } from './ui/alert';
+import { formatTicketDateTime, formatTripDepartureDisplay } from './utils/tripDateTime';
 
 const ticketStatuses = [
   { value: 'confirmed', label: 'Confirmed', color: 'bg-green-100 text-green-800', icon: CheckCircle },
@@ -68,9 +70,19 @@ export function PassengerTickets() {
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const stationId = user?.stationId;
 
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('all');
+
   const fetchTickets = useCallback(
-    () => ticketApi.getAll(isAdmin ? undefined : { stationId }),
-    [isAdmin, stationId]
+    (page: number, limit: number) =>
+      ticketApi.getAll({
+        ...(isAdmin ? {} : { stationId }),
+        page,
+        limit,
+        search: searchTerm.trim() || undefined,
+        status: selectedStatus !== 'all' ? selectedStatus : undefined,
+      }),
+    [isAdmin, stationId, searchTerm, selectedStatus]
   );
 
   const {
@@ -78,13 +90,15 @@ export function PassengerTickets() {
     loading,
     refresh,
     setItems: setTickets,
-  } = useEntityList<ETicket>({
+    page,
+    setPage,
+    pagination,
+  } = usePaginatedEntityList<ETicket>({
     fetchFn: fetchTickets,
     entityKey: 'tickets',
     errorMessage: 'Failed to load tickets',
+    resetPageDeps: [searchTerm, selectedStatus, stationId],
   });
-
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedTicket, setSelectedTicket] = useState<ETicket | null>(null);
   const [showTicketDialog, setShowTicketDialog] = useState(false);
   const [resendingSms, setResendingSms] = useState(false);
@@ -98,7 +112,6 @@ export function PassengerTickets() {
     window.addEventListener(TICKET_ISSUED_EVENT, onTicketIssued);
     return () => window.removeEventListener(TICKET_ISSUED_EVENT, onTicketIssued);
   }, [refresh, setTickets]);
-  const [selectedStatus, setSelectedStatus] = useState('all');
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [complaintForm, setComplaintForm] = useState({
@@ -108,20 +121,6 @@ export function PassengerTickets() {
   });
 
   const userTickets = isAdmin ? tickets : tickets.filter((t) => t.stationId === user?.stationId);
-
-  // Apply search and status filters
-  const filteredTickets = userTickets.filter(ticket => {
-    const matchesSearch = searchTerm === '' || 
-      ticket.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ticket.passengerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ticket.passengerPhone.includes(searchTerm) ||
-      ticket.routeFrom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ticket.routeTo.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = selectedStatus === 'all' || ticket.status === selectedStatus;
-    
-    return matchesSearch && matchesStatus;
-  });
 
   const getStatusBadge = (status: string) => {
     const statusInfo = ticketStatuses.find(s => s.value === status);
@@ -290,11 +289,11 @@ export function PassengerTickets() {
         <div className="flex items-center space-x-4 text-sm text-gray-600">
           <div className="flex items-center space-x-1">
             <Calendar className="h-3 w-3" />
-            <span>{new Date(ticket.departureTime).toLocaleDateString()}</span>
+            <span>{formatTicketDateTime(ticket.departureTime).date}</span>
           </div>
           <div className="flex items-center space-x-1">
             <Clock className="h-3 w-3" />
-            <span>{new Date(ticket.departureTime).toLocaleTimeString()}</span>
+            <span>{formatTicketDateTime(ticket.departureTime).time}</span>
           </div>
         </div>
         
@@ -448,7 +447,9 @@ export function PassengerTickets() {
       <div className="hidden lg:block">
         <Card>
           <CardHeader>
-            <CardTitle>Ticket Registry ({filteredTickets.length} tickets)</CardTitle>
+            <CardTitle>
+              Ticket Registry ({pagination?.totalItems ?? userTickets.length} tickets)
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
@@ -464,7 +465,7 @@ export function PassengerTickets() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredTickets.map((ticket) => (
+                {userTickets.map((ticket) => (
                   <TableRow key={ticket.id}>
                     <TableCell>
                       <div>
@@ -486,8 +487,8 @@ export function PassengerTickets() {
                     </TableCell>
                     <TableCell>
                       <div>
-                        <p className="text-sm">{new Date(ticket.departureTime).toLocaleDateString()}</p>
-                        <p className="text-sm text-gray-500">{new Date(ticket.departureTime).toLocaleTimeString()}</p>
+                        <p className="text-sm">{formatTicketDateTime(ticket.departureTime).date}</p>
+                        <p className="text-sm text-gray-500">{formatTicketDateTime(ticket.departureTime).time}</p>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -533,6 +534,13 @@ export function PassengerTickets() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination
+              page={page}
+              pagination={pagination}
+              onPageChange={setPage}
+              loading={loading}
+              itemLabel="tickets"
+            />
           </CardContent>
         </Card>
       </div>
@@ -540,18 +548,28 @@ export function PassengerTickets() {
       {/* Ticket Cards for mobile */}
       <div className="lg:hidden">
         <div className="mb-4">
-          <p className="text-sm text-gray-600">{filteredTickets.length} tickets found</p>
+          <p className="text-sm text-gray-600">
+            {pagination?.totalItems ?? userTickets.length} tickets found
+          </p>
         </div>
         <div className="grid grid-cols-1 gap-4">
-          {filteredTickets.map((ticket) => (
+          {userTickets.map((ticket) => (
             <TicketCard key={ticket.id} ticket={ticket} />
           ))}
         </div>
+        <TablePagination
+          page={page}
+          pagination={pagination}
+          onPageChange={setPage}
+          loading={loading}
+          itemLabel="tickets"
+          className="mt-4"
+        />
       </div>
 
       {/* Enhanced Ticket Details Dialog */}
       <Dialog open={showTicketDialog} onOpenChange={setShowTicketDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Ticket Details</DialogTitle>
             <DialogDescription>
@@ -600,7 +618,7 @@ export function PassengerTickets() {
                   <div className="space-y-3">
                     <div>
                       <span className="text-gray-600">Departure:</span>
-                      <p>{new Date(selectedTicket.departureTime).toLocaleString()}</p>
+                      <p>{formatTripDepartureDisplay({ departureTime: selectedTicket.departureTime })}</p>
                     </div>
                     <div>
                       <span className="text-gray-600">Vehicle:</span>

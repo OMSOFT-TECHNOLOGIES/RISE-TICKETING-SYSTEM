@@ -100,8 +100,8 @@ function AdminQuickActions({ open, onOpenChange }: QuickActionDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0 gap-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+      <DialogContent className="flex max-w-md flex-col gap-0 p-0">
+        <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5" />
             Quick Actions
@@ -109,7 +109,7 @@ function AdminQuickActions({ open, onOpenChange }: QuickActionDialogProps) {
           <DialogDescription>Open a module to complete the task with live data</DialogDescription>
         </DialogHeader>
 
-        <div className="p-4 space-y-2">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-4">
           {actions.map(({ id, page, title, description, icon: Icon, accent, iconBg }) => (
             <button
               key={id}

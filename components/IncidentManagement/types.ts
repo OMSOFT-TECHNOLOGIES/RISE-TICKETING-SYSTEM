@@ -1,6 +1,15 @@
 export type IncidentType = 'accident' | 'breakdown' | 'theft' | 'violence' | 'medical' | 'other';
 export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical';
-export type IncidentStatus = 'reported' | 'investigating' | 'resolved' | 'closed';
+export type IncidentStatus =
+  | 'reported'
+  | 'investigating'
+  | 'resolved'
+  | 'couldnt_fix'
+  | 'closed';
+
+export type IncidentReportSource = 'internal' | 'public';
+export type IncidentConfirmationStatus = 'pending' | 'confirmed' | 'rejected';
+export type VehicleReportMode = 'public' | 'other';
 export type IncidentPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night';
 
@@ -22,7 +31,14 @@ export interface Incident {
   location: string;
   coordinates?: IncidentCoordinates;
   vehicleRegNumber?: string;
+  vehicleMode?: VehicleReportMode;
+  registeredVehicleId?: string;
   driverName?: string;
+  reportSource?: IncidentReportSource;
+  confirmationStatus?: IncidentConfirmationStatus;
+  confirmedByAgency?: string;
+  confirmedBy?: string;
+  confirmedAt?: string;
   passengersInvolved?: number;
   injuriesReported?: number;
   fatalitiesReported?: number;
@@ -49,7 +65,10 @@ export interface NewIncidentForm {
   description: string;
   type: string;
   severity: string;
+  region: string;
   location: string;
+  vehicleMode: VehicleReportMode;
+  registeredVehicleId: string;
   vehicleRegNumber: string;
   driverName: string;
   passengersInvolved: string;
@@ -61,7 +80,14 @@ export interface NewIncidentForm {
   roadConditions: string;
   timeOfDay: string;
   emergencyServices: string[];
+  reportSource: IncidentReportSource;
 }
+
+export type FleetVehicleOption = {
+  id: string;
+  registrationNumber: string;
+  driverName?: string;
+};
 
 export interface IncidentFilters {
   search: string;

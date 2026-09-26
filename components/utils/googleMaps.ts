@@ -47,8 +47,12 @@ export function getDefaultGoogleMapOptions(
   return {
     center: DEFAULT_MAP_CENTER,
     zoom: 7,
-    mapTypeControl: false,
-    streetViewControl: false,
+    mapTypeId: 'roadmap',
+    mapTypeControl: true,
+    mapTypeControlOptions: {
+      mapTypeIds: ['roadmap', 'hybrid'],
+    },
+    streetViewControl: true,
     fullscreenControl: true,
     restriction: ghanaMapRestriction(),
     ...overrides,

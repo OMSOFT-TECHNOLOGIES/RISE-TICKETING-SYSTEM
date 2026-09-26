@@ -4,7 +4,9 @@ import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
+import type { ListPagination } from '../../utils/api/client';
 import type { Rating, RatingFilters } from '../types';
+import { TablePagination } from '../../shared/TablePagination';
 import { formatFeedbackDate } from '../utils';
 import { StarRating } from './StarRating';
 
@@ -13,9 +15,22 @@ interface RatingsTabProps {
   filters: RatingFilters;
   onFiltersChange: (updates: Partial<RatingFilters>) => void;
   onExport: () => void;
+  page?: number;
+  pagination?: ListPagination | null;
+  onPageChange?: (page: number) => void;
+  loading?: boolean;
 }
 
-export function RatingsTab({ ratings, filters, onFiltersChange, onExport }: RatingsTabProps) {
+export function RatingsTab({
+  ratings,
+  filters,
+  onFiltersChange,
+  onExport,
+  page = 1,
+  pagination = null,
+  onPageChange,
+  loading = false,
+}: RatingsTabProps) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-4 sm:items-end">
@@ -44,7 +59,8 @@ export function RatingsTab({ ratings, filters, onFiltersChange, onExport }: Rati
         <div className="px-5 py-4 border-b">
           <h3 className="text-sm font-semibold">Ratings Registry</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {ratings.length} rating{ratings.length !== 1 ? 's' : ''} recorded
+            {pagination?.totalItems ?? ratings.length} rating
+            {(pagination?.totalItems ?? ratings.length) !== 1 ? 's' : ''} recorded
           </p>
         </div>
         <Table>
@@ -84,6 +100,16 @@ export function RatingsTab({ ratings, filters, onFiltersChange, onExport }: Rati
             )}
           </TableBody>
         </Table>
+        {onPageChange ? (
+          <TablePagination
+            page={page}
+            pagination={pagination}
+            onPageChange={onPageChange}
+            loading={loading}
+            itemLabel="ratings"
+            className="px-5"
+          />
+        ) : null}
       </div>
     </div>
   );

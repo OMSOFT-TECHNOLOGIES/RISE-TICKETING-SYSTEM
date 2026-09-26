@@ -83,7 +83,7 @@ function normalizeTrip(item: Record<string, unknown>): NormalizedTrip {
     route,
     fare: Number(item.fare ?? item.totalFare ?? item.baseFare ?? 0),
     bookedSeats: Number(item.bookedSeats ?? item.booked ?? item.passengerCount ?? 0),
-    departureTime: String(item.departureTime ?? item.departureDate ?? item.createdAt ?? ''),
+    departureTime: String(item.departureTime ?? ''),
     stationName: String(item.stationName ?? item.fromStationName ?? 'Unknown station'),
     status: String(item.status ?? ''),
   };
@@ -100,7 +100,7 @@ function normalizeTicket(item: Record<string, unknown>): NormalizedTicket {
     route,
     stationName: String(item.stationName ?? 'Unknown station'),
     bookingDate: String(item.bookingDate ?? item.createdAt ?? ''),
-    departureTime: String(item.departureTime ?? item.bookingDate ?? ''),
+    departureTime: String(item.departureTime ?? ''),
     status: String(item.status ?? ''),
     paymentMethod: item.paymentMethod ? String(item.paymentMethod) : undefined,
   };

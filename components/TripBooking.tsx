@@ -25,22 +25,50 @@ import {
   UserPlus,
   CarFront,
   ExternalLink,
-  Loader2
+  Loader2,
+  Shield
 } from 'lucide-react';
 import { Badge } from './ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Textarea } from './ui/textarea';
 import { Alert, AlertDescription } from './ui/alert';
 import { Progress } from './ui/progress';
+import { ScrollArea } from './ui/scroll-area';
+import { isStationOperationsRole } from './constants/userRoles';
+import {
+  TRIP_OPERATION_STATUSES,
+  tripStatusLabel,
+  tripStatusRequiresReason,
+} from './constants/tripOperationStatus';
+import { formatTripDepartureDisplay, getTripDepartureIso } from './utils/tripDateTime';
+import { getTripSeatStats } from './utils/tripSeats';
 import { notify } from './utils/notify';
-import { tripApi, driverApi, vehicleApi, passengerApi, parseListResponse } from './utils/api';
+import {
+  tripApi,
+  driverApi,
+  vehicleApi,
+  passengerApi,
+  parseListResponse,
+  formatApiError,
+} from './utils/api';
 import { isGlobalDataScope, listParamsForDataEntry } from './utils/stationScope';
 import { useDataEntryStation } from './shared/hooks/useDataEntryStation';
 import { DataEntryStationBanner } from './shared/DataEntryStationBanner';
 import { toDriverApiPayload } from './utils/driverForm';
+import { DriverSearchSelect } from './shared/DriverSearchSelect';
 import { useEntityList } from './shared/hooks/useEntityList';
+import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
+import { TablePagination } from './shared/TablePagination';
 import {
   EMPTY_PASSENGER_BOOKING_FORM,
   PassengerBookingFormFields,
@@ -59,89 +87,55 @@ import {
   fetchPassengerByPhone,
   normalizePhoneDigits,
 } from './utils/passengerLookup';
-
-// Tier system configuration
-const TIER_SYSTEM = [
-  {
-    id: 1,
-    name: 'Tier 1',
-    minFare: 0.01,
-    maxFare: 29,
-    commission: 0.50,
-    color: 'bg-green-100 text-green-800 border-green-200',
-    description: 'Basic routes - Local & short distance'
-  },
-  {
-    id: 2,
-    name: 'Tier 2', 
-    minFare: 30,
-    maxFare: 59,
-    commission: 1.00,
-    color: 'bg-[#193cb8]/10 text-[#193cb8] border-[#193cb8]/20',
-    description: 'Medium routes - Inter-district'
-  },
-  {
-    id: 3,
-    name: 'Tier 3',
-    minFare: 60,
-    maxFare: Infinity,
-    commission: 2.00,
-    color: 'bg-[#193cb8]/10 text-[#193cb8] border-[#193cb8]/20',
-    description: 'Premium routes - Long distance'
-  }
-];
-
-// Function to calculate tier and commission with proper passenger count
-const calculateTierInfo = (fare: number, passengerCount: number = 1) => {
-  const tier = TIER_SYSTEM.find(t => fare >= t.minFare && fare <= t.maxFare);
-  const commissionPerPassenger = tier ? tier.commission : 0;
-  const totalCommission = commissionPerPassenger * passengerCount;
-  const tripRevenue = fare * passengerCount;
-  const netRevenue = tripRevenue - totalCommission;
-  
-  return {
-    tier: tier || TIER_SYSTEM[0],
-    commissionPerPassenger,
-    totalCommission,
-    tripRevenue,
-    netRevenue,
-    farePerPassenger: fare,
-    passengerCount
-  };
-};
+import {
+  calculateTierInfo,
+  editRowsToApiPayload,
+  getDefaultTripTiers,
+  parseTripTiersFromApi,
+  tiersToEditRows,
+  type TripCommissionTier,
+  type TripTierEditRow,
+} from './utils/tripTier';
+import {
+  canPrintPoliceCheck,
+  canStartTripJourney,
+  printPoliceCheckForTrip,
+  startTripJourneyAndPrint,
+} from './utils/tripJourney';
 
 type TripRecord = Record<string, unknown>;
 
 function normalizeTrip(trip: TripRecord): TripRecord {
   const routeParts = String(trip.route ?? '').split(/\s*(?:→|to)\s*/i);
-  const booked = Number(trip.booked ?? trip.bookedSeats ?? 0);
-  const capacity = Number(trip.capacity ?? 0);
+  const seatStats = getTripSeatStats(trip);
+  const booked = seatStats.booked;
+  const capacity = seatStats.capacity;
+  const departureAt = getTripDepartureIso(trip);
   let departureDate = trip.departureDate;
-  let departureTime = trip.departureTime;
-  if (typeof trip.departureTime === 'string' && trip.departureTime.includes('T')) {
-    const [datePart, timePart] = trip.departureTime.split('T');
+  let departureTimeOnly = trip.departureTimeOnly;
+  if (departureAt) {
+    const [datePart, timePart] = departureAt.split('T');
     departureDate = departureDate ?? datePart;
-    departureTime = departureTimeOnlyFromIso(timePart) ?? timePart;
+    departureTimeOnly = departureTimeOnly ?? timePart?.slice(0, 5);
   }
   return {
     ...trip,
     routeFrom: trip.routeFrom ?? routeParts[0]?.trim() ?? '',
     routeTo: trip.routeTo ?? routeParts[1]?.trim() ?? '',
     departureDate,
-    departureTime,
+    departureTimeOnly,
+    departureAt,
+    departureTime: departureAt || trip.departureTime,
     booked,
     capacity,
-    available: Number(trip.available ?? Math.max(0, capacity - booked)),
+    available: seatStats.remaining,
+    canBook: seatStats.canBook,
+    isFull: seatStats.isFull,
     fare: Number(trip.fare ?? trip.totalFare ?? trip.baseFare ?? 0),
     vehicle: trip.vehicle ?? trip.vehicleRegistration ?? trip.vehicleNumber ?? '',
     driver: trip.driver ?? trip.driverName ?? '',
     passengers: trip.passengers ?? [],
   };
-}
-
-function departureTimeOnlyFromIso(timePart: string): string | undefined {
-  if (!timePart) return undefined;
-  return timePart.slice(0, 5);
 }
 
 function driverNameForVehicle(
@@ -171,17 +165,17 @@ function driverIdForSchedule(
   return undefined;
 }
 
-const tripStatuses = [
-  { value: 'scheduled', label: 'Scheduled', color: 'bg-[#193cb8]/10 text-[#193cb8]' },
-  { value: 'in_progress', label: 'In Progress', color: 'bg-green-100 text-green-800' },
-  { value: 'completed', label: 'Completed', color: 'bg-gray-100 text-gray-800' },
-  { value: 'cancelled', label: 'Cancelled', color: 'bg-red-100 text-red-800' },
-  { value: 'full', label: 'Full', color: 'bg-yellow-100 text-yellow-800' }
-];
-
 // Tier Badge Component
-const TierBadge = ({ fare, showCommission = false }: { fare: number; showCommission?: boolean }) => {
-  const tierInfo = calculateTierInfo(fare, 1);
+const TierBadge = ({
+  fare,
+  tiers,
+  showCommission = false,
+}: {
+  fare: number;
+  tiers: TripCommissionTier[];
+  showCommission?: boolean;
+}) => {
+  const tierInfo = calculateTierInfo(tiers, fare, 1);
   return (
     <div className="flex items-center gap-2">
       <Badge variant="outline" className={tierInfo.tier.color}>
@@ -197,8 +191,8 @@ const TierBadge = ({ fare, showCommission = false }: { fare: number; showCommiss
 };
 
 // Tier Information Card for trip scheduling
-const TierInfoCard = ({ fare }: { fare: number }) => {
-  const tierInfo = calculateTierInfo(fare, 1); // Preview for single passenger
+const TierInfoCard = ({ fare, tiers }: { fare: number; tiers: TripCommissionTier[] }) => {
+  const tierInfo = calculateTierInfo(tiers, fare, 1);
   const progressPercentage = Math.min((fare / 100) * 100, 100);
   
   return (
@@ -257,14 +251,15 @@ const TierInfoCard = ({ fare }: { fare: number }) => {
 };
 
 export function TripBooking() {
-  const { user } = useAuth();
+  const { user, isSuperAdmin } = useAuth();
   const { pendingAction, clearAction } = usePageAction();
   const isGlobalUser = isGlobalDataScope(user?.role);
   const stationId = user?.stationId;
   const dataEntry = useDataEntryStation();
 
   const fetchTrips = useCallback(
-    () => tripApi.getAll(listParamsForDataEntry(user, dataEntry.effectiveStationId, { limit: 200 })),
+    (page: number, limit: number) =>
+      tripApi.getAll(listParamsForDataEntry(user, dataEntry.effectiveStationId, { page, limit })),
     [user, dataEntry.effectiveStationId]
   );
   const fetchDrivers = useCallback(async () => {
@@ -286,7 +281,10 @@ export function TripBooking() {
     refresh: refreshTrips,
     isSubmitting,
     setIsSubmitting,
-  } = useEntityList<TripRecord>({
+    page: tripsPage,
+    setPage: setTripsPage,
+    pagination: tripsPagination,
+  } = usePaginatedEntityList<TripRecord>({
     fetchFn: fetchTrips,
     entityKey: 'trips',
     errorMessage: 'Failed to load trips',
@@ -316,6 +314,43 @@ export function TripBooking() {
   }, [pendingAction, clearAction]);
 
   const [showTierGuide, setShowTierGuide] = useState(false);
+  const [commissionTiers, setCommissionTiers] = useState<TripCommissionTier[]>(() =>
+    getDefaultTripTiers()
+  );
+  const [tierEditRows, setTierEditRows] = useState<TripTierEditRow[]>(() =>
+    tiersToEditRows(getDefaultTripTiers())
+  );
+  const [tierSaving, setTierSaving] = useState(false);
+
+  const loadCommissionTiers = useCallback(async () => {
+    const response = await tripApi.getCommissionTiers();
+    if (response.success && response.data) {
+      const parsed = parseTripTiersFromApi(response.data);
+      setCommissionTiers(parsed);
+      setTierEditRows(tiersToEditRows(parsed));
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCommissionTiers();
+  }, [loadCommissionTiers]);
+
+  const handleSaveCommissionTiers = async () => {
+    setTierSaving(true);
+    try {
+      const response = await tripApi.updateCommissionTiers(editRowsToApiPayload(tierEditRows));
+      if (response.success) {
+        notify.success('Trip commission tiers updated');
+        await loadCommissionTiers();
+      } else {
+        notify.error(response.error || 'Failed to update tier fees');
+      }
+    } catch {
+      notify.error('Failed to update tier fees');
+    } finally {
+      setTierSaving(false);
+    }
+  };
   const [showDriverRegDialog, setShowDriverRegDialog] = useState(false);
   const [showVehicleRegDialog, setShowVehicleRegDialog] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<TripRecord | null>(null);
@@ -329,6 +364,7 @@ export function TripBooking() {
     departureTime: '',
     vehicle: '',
     driver: '',
+    driverId: '',
     fare: ''
   });
   const [newDriver, setNewDriver] = useState({
@@ -508,14 +544,17 @@ export function TripBooking() {
   };
 
   // Calculate tier statistics with corrected calculations
-  const tierStats = TIER_SYSTEM.map(tier => {
-    const tierTrips = userTrips.filter(trip => {
-      const tripTier = calculateTierInfo(trip.fare, 1);
+  const tierStats = commissionTiers.map((tier) => {
+    const tierTrips = userTrips.filter((trip) => {
+      const tripTier = calculateTierInfo(commissionTiers, trip.fare, 1);
       return tripTier.tier.id === tier.id;
     });
-    
-    const totalRevenue = tierTrips.reduce((sum, trip) => sum + (trip.fare * trip.booked), 0);
-    const totalCommission = tierTrips.reduce((sum, trip) => sum + (tier.commission * trip.booked), 0);
+
+    const totalRevenue = tierTrips.reduce((sum, trip) => sum + trip.fare * trip.booked, 0);
+    const totalCommission = tierTrips.reduce(
+      (sum, trip) => sum + tier.commission * trip.booked,
+      0
+    );
     
     return {
       ...tier,
@@ -535,11 +574,17 @@ export function TripBooking() {
     const selectedVehicle = vehicles.find(
       (v) => String(v.registrationNumber) === newTrip.vehicle
     );
-    const driverId = driverIdForSchedule(newTrip.driver, selectedVehicle, drivers);
+    const driverId =
+      newTrip.driverId ||
+      driverIdForSchedule(newTrip.driver, selectedVehicle, drivers);
     const vehicleId = selectedVehicle?.id != null ? String(selectedVehicle.id) : undefined;
 
     if (!vehicleId) {
       notify.error('Please select a valid vehicle');
+      return;
+    }
+    if (!driverId) {
+      notify.error('Please select a driver');
       return;
     }
 
@@ -567,6 +612,7 @@ export function TripBooking() {
           departureTime: '',
           vehicle: '',
           driver: '',
+          driverId: '',
           fare: '',
         });
         setShowBookDialog(false);
@@ -686,7 +732,7 @@ export function TripBooking() {
       passengerEmail: entry.email,
       routeFrom: String(trip.routeFrom),
       routeTo: String(trip.routeTo),
-      departureTime: String(trip.departureTime),
+      departureTime: getTripDepartureIso(trip) || String(trip.departureTime ?? ''),
       arrivalTime: trip.arrivalTime as string | undefined,
       fare: Number(trip.fare),
       vehicle: String(trip.vehicle),
@@ -701,7 +747,15 @@ export function TripBooking() {
   };
 
   const handleBookAndPrintPassenger = async () => {
-    const validationError = validatePassengerBookingForm(passengerBooking);
+    const hasStoredEmergency = Boolean(
+      passengerBooking.emergencyContactName?.trim() &&
+        passengerBooking.emergencyContactPhone?.trim() &&
+        passengerBooking.emergencyContactRelationship?.trim()
+    );
+    const validationError = validatePassengerBookingForm(passengerBooking, {
+      returningPassenger: passengerProfileFound,
+      hasStoredEmergency,
+    });
     if (validationError) {
       notify.error(validationError);
       return;
@@ -721,6 +775,11 @@ export function TripBooking() {
     const trip = trips.find((t) => String(t.id) === String(passengerBooking.tripId));
     if (!trip) {
       notify.error('Please select a valid trip');
+      return;
+    }
+    if (!getTripSeatStats(trip).canBook) {
+      notify.error('This trip is full — no seats remaining');
+      await refreshTrips();
       return;
     }
 
@@ -743,9 +802,14 @@ export function TripBooking() {
       await refreshTrips();
       const manifestRes = await passengerApi.getTripPassengers(String(trip.id));
       if (manifestRes.success && manifestRes.data !== undefined) {
-        setBookingTripManifest(
-          parseListResponse<TripRecord>(manifestRes.data, 'passengers')
-        );
+        const manifest = parseListResponse<TripRecord>(manifestRes.data, 'passengers');
+        setBookingTripManifest(manifest);
+        const cap = Number(trip.capacity ?? 0);
+        if (cap > 0 && manifest.length >= cap) {
+          notify.success('Trip is now fully booked', {
+            description: 'Status updated to Fully booked.',
+          });
+        }
       }
     } catch {
       // issueETicket shows errors
@@ -763,16 +827,145 @@ export function TripBooking() {
   };
 
   const getStatusBadge = (status: string) => {
-    const statusInfo = tripStatuses.find(s => s.value === status);
+    const statusInfo = TRIP_OPERATION_STATUSES.find((s) => s.value === status);
     return (
       <Badge className={statusInfo?.color || 'bg-gray-100 text-gray-800'}>
-        {statusInfo?.label || status}
+        {statusInfo?.label || tripStatusLabel(status)}
       </Badge>
     );
   };
 
+  const stationScopedStaff = isStationOperationsRole(user?.role);
+
+  useEffect(() => {
+    if (!showBookDialog || !stationScopedStaff) return;
+    const origin = user?.stationName?.trim();
+    if (!origin) return;
+    setNewTrip((prev) =>
+      prev.routeFrom && prev.routeFrom !== origin
+        ? prev
+        : { ...prev, routeFrom: origin }
+    );
+  }, [showBookDialog, stationScopedStaff, user?.stationName]);
+
+  const scheduleVehicle = vehicles.find(
+    (v) => String(v.registrationNumber) === newTrip.vehicle
+  );
+  const scheduleCapacity = Number(scheduleVehicle?.capacity ?? 0);
+  const scheduleFare = parseFloat(newTrip.fare) || 0;
+  const scheduleFullCoachCommission = useMemo(() => {
+    if (scheduleFare <= 0 || scheduleCapacity <= 0) return null;
+    return calculateTierInfo(commissionTiers, scheduleFare, scheduleCapacity);
+  }, [commissionTiers, scheduleFare, scheduleCapacity]);
+
+  const stationExpectedCommission = useMemo(() => {
+    return userTrips.reduce((sum, trip) => {
+      const cap = Number(trip.capacity ?? 0);
+      const fare = Number(trip.fare ?? 0);
+      if (cap <= 0 || fare <= 0) return sum;
+      return sum + calculateTierInfo(commissionTiers, fare, cap).totalCommission;
+    }, 0);
+  }, [userTrips, commissionTiers]);
+
+  const [driverHistoryDriverId, setDriverHistoryDriverId] = useState('');
+  const [driverHistorySearch, setDriverHistorySearch] = useState('');
+  const [driverHistoryTrips, setDriverHistoryTrips] = useState<TripRecord[]>([]);
+  const [driverHistoryLoading, setDriverHistoryLoading] = useState(false);
+  const [journeyActionTripId, setJourneyActionTripId] = useState<string | null>(null);
+
+  const tripStationContext = () =>
+    dataEntry.selectedStation?.name || user?.stationName || 'RISE Station';
+
+  const loadDriverTripHistory = useCallback(async () => {
+    if (!driverHistoryDriverId) {
+      notify.error('Select a driver first');
+      return;
+    }
+    setDriverHistoryLoading(true);
+    try {
+      const response = await tripApi.getAll({
+        driverId: driverHistoryDriverId,
+        search: driverHistorySearch.trim() || undefined,
+        limit: 100,
+        ...listParamsForDataEntry(user, dataEntry.effectiveStationId),
+      });
+      if (response.success && response.data) {
+        const list = parseListResponse<TripRecord>(response.data, 'trips').map(normalizeTrip);
+        setDriverHistoryTrips(list);
+      } else {
+        setDriverHistoryTrips([]);
+      }
+    } catch {
+      setDriverHistoryTrips([]);
+      notify.error('Failed to load driver trip history');
+    } finally {
+      setDriverHistoryLoading(false);
+    }
+  }, [driverHistoryDriverId, driverHistorySearch, user, dataEntry.effectiveStationId]);
+
+  const handleTripOperationStatus = async (
+    tripId: string,
+    status: string,
+    statusReason?: string
+  ) => {
+    if (tripStatusRequiresReason(status) && !statusReason?.trim()) {
+      notify.error('A reason is required for this status');
+      return;
+    }
+    try {
+      const response = await tripApi.updateStatus(tripId, status, statusReason?.trim());
+      if (response.success) {
+        notify.success('Trip status updated');
+        await refreshTrips();
+      } else {
+        notify.error(formatApiError(response.error, 'Failed to update status'));
+      }
+    } catch {
+      notify.error('Failed to update status');
+    }
+  };
+
+  const handleStartJourneyForTrip = async (tripId: string, trip: TripRecord) => {
+    setJourneyActionTripId(tripId);
+    try {
+      const result = await startTripJourneyAndPrint({
+        tripId,
+        trip,
+        stationName: tripStationContext(),
+        branchPhone: user?.phone,
+      });
+      if (!result.ok) {
+        notify.error(result.error ?? 'Could not start journey');
+        return;
+      }
+      notify.success('Journey started — police receipt check sent to printer');
+      await refreshTrips();
+    } finally {
+      setJourneyActionTripId(null);
+    }
+  };
+
+  const handlePrintPoliceCheck = async (tripId: string, trip: TripRecord) => {
+    setJourneyActionTripId(tripId);
+    try {
+      const result = await printPoliceCheckForTrip({
+        tripId,
+        trip,
+        stationName: tripStationContext(),
+        branchPhone: user?.phone,
+      });
+      if (!result.ok) {
+        notify.error(result.error ?? 'Could not print police check');
+        return;
+      }
+      notify.info('Police receipt check sent to printer');
+    } finally {
+      setJourneyActionTripId(null);
+    }
+  };
+
   const TripCard = ({ trip }: { trip: any }) => {
-    const tierInfo = calculateTierInfo(trip.fare, trip.booked);
+    const tierInfo = calculateTierInfo(commissionTiers, trip.fare, trip.booked);
     
     return (
       <Card>
@@ -787,7 +980,7 @@ export function TripBooking() {
             </div>
             <div className="flex flex-col items-end gap-2">
               {getStatusBadge(trip.status)}
-              <TierBadge fare={trip.fare} />
+              <TierBadge fare={trip.fare} tiers={commissionTiers} />
             </div>
           </div>
         </CardHeader>
@@ -796,7 +989,7 @@ export function TripBooking() {
             <div>
               <div className="flex items-center space-x-1 mb-1">
                 <Clock className="h-3 w-3" />
-                <span>Departure: {new Date(trip.departureTime).toLocaleString()}</span>
+                <span>Departure: {formatTripDepartureDisplay(trip)}</span>
               </div>
               <div className="flex items-center space-x-1">
                 <Bus className="h-3 w-3" />
@@ -859,7 +1052,7 @@ export function TripBooking() {
               >
                 <Eye className="h-4 w-4" />
               </Button>
-              {trip.available > 0 && (
+              {getTripSeatStats(trip).canBook && (
                 <Button 
                   size="sm"
                   onClick={() => openBookPassengerModal(trip.id)}
@@ -896,6 +1089,17 @@ export function TripBooking() {
         />
       )}
 
+      {stationScopedStaff && stationExpectedCommission > 0 && (
+        <Alert className="border-[#193cb8]/30 bg-[#193cb8]/5">
+          <DollarSign className="h-4 w-4" />
+          <AlertDescription>
+            Expected RISE commission if all scheduled trips sell out at full capacity:{' '}
+            <strong>₵{stationExpectedCommission.toFixed(2)}</strong> (remit to RISE after trips
+            complete).
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Trip Booking & Management</h1>
@@ -929,7 +1133,7 @@ export function TripBooking() {
                 </Alert>
                 
                 <div className="space-y-3">
-                  {TIER_SYSTEM.map((tier) => (
+                  {commissionTiers.map((tier) => (
                     <Card key={tier.id} className="p-4">
                       <div className="flex items-center justify-between mb-2">
                         <Badge variant="outline" className={tier.color}>
@@ -939,13 +1143,88 @@ export function TripBooking() {
                       </div>
                       <p className="text-sm text-muted-foreground mb-2">{tier.description}</p>
                       <p className="text-sm">
-                        <strong>Fare Range:</strong> ₵{tier.minFare} - {tier.maxFare === Infinity ? '∞' : `₵${tier.maxFare}`}
+                        <strong>Fare Range:</strong> ₵{tier.minFare} -{' '}
+                        {tier.maxFare == null ? '∞' : `₵${tier.maxFare}`}
                       </p>
                     </Card>
                   ))}
                 </div>
 
-                <div className="mt-6 p-4 bg-[#193cb8]/10 rounded-lg">
+                {isSuperAdmin() && (
+                  <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
+                    <div>
+                      <h4 className="font-medium">Edit tier fees</h4>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Changes apply system-wide for trip commission calculations.
+                      </p>
+                    </div>
+                    {tierEditRows.map((row, index) => (
+                      <div
+                        key={row.tierLevel}
+                        className="grid grid-cols-1 gap-3 rounded-md border bg-background p-3 sm:grid-cols-2 lg:grid-cols-3"
+                      >
+                        <div className="space-y-1">
+                          <Label>Name</Label>
+                          <Input
+                            value={row.name}
+                            onChange={(e) => {
+                              const next = [...tierEditRows];
+                              next[index] = { ...row, name: e.target.value };
+                              setTierEditRows(next);
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Min fare (₵)</Label>
+                          <Input
+                            value={row.minFare}
+                            onChange={(e) => {
+                              const next = [...tierEditRows];
+                              next[index] = { ...row, minFare: e.target.value };
+                              setTierEditRows(next);
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Max fare (₵)</Label>
+                          <Input
+                            placeholder="No max"
+                            value={row.maxFare}
+                            onChange={(e) => {
+                              const next = [...tierEditRows];
+                              next[index] = { ...row, maxFare: e.target.value };
+                              setTierEditRows(next);
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Fee / passenger (₵)</Label>
+                          <Input
+                            value={row.commission}
+                            onChange={(e) => {
+                              const next = [...tierEditRows];
+                              next[index] = { ...row, commission: e.target.value };
+                              setTierEditRows(next);
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1 sm:col-span-2 lg:col-span-3">
+                          <Label>Description</Label>
+                          <Input
+                            value={row.description}
+                            onChange={(e) => {
+                              const next = [...tierEditRows];
+                              next[index] = { ...row, description: e.target.value };
+                              setTierEditRows(next);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="p-4 bg-[#193cb8]/10 rounded-lg">
                   <h4 className="font-medium mb-2">How It Works</h4>
                   <ul className="text-sm space-y-1 text-[#193cb8]">
                     <li>• Commission is charged per passenger per trip</li>
@@ -956,6 +1235,25 @@ export function TripBooking() {
                   </ul>
                 </div>
               </div>
+              {isSuperAdmin() && (
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    className="w-full sm:w-auto bg-[#193cb8] hover:bg-[#152f94]"
+                    onClick={() => void handleSaveCommissionTiers()}
+                    disabled={tierSaving}
+                  >
+                    {tierSaving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving…
+                      </>
+                    ) : (
+                      'Save tier configuration'
+                    )}
+                  </Button>
+                </DialogFooter>
+              )}
             </DialogContent>
           </Dialog>
 
@@ -966,7 +1264,7 @@ export function TripBooking() {
                 Schedule Trip
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>Schedule New Trip</DialogTitle>
                 <DialogDescription>
@@ -982,7 +1280,14 @@ export function TripBooking() {
                       value={newTrip.routeFrom}
                       onChange={(e) => setNewTrip({ ...newTrip, routeFrom: e.target.value })}
                       placeholder="Origin city or station"
+                      readOnly={stationScopedStaff}
+                      className={stationScopedStaff ? 'bg-muted' : undefined}
                     />
+                    {stationScopedStaff && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        From is set to your operating station
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="to">To</Label>
@@ -1121,10 +1426,14 @@ export function TripBooking() {
                         (v) => String(v.registrationNumber) === value
                       );
                       const assignedDriver = driverNameForVehicle(vehicle, drivers);
+                      const driverMatch = drivers.find(
+                        (d) => String(d.name) === assignedDriver
+                      );
                       setNewTrip({
                         ...newTrip,
                         vehicle: value,
                         driver: assignedDriver,
+                        driverId: driverMatch ? String(driverMatch.id) : '',
                       });
                     }}
                   >
@@ -1241,27 +1550,26 @@ export function TripBooking() {
                       </DialogContent>
                     </Dialog>
                   </div>
-                  <Select
-                    value={newTrip.driver || undefined}
-                    onValueChange={(value) => setNewTrip({ ...newTrip, driver: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select driver" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableDrivers.length === 0 ? (
-                        <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                          No drivers available — register one above
-                        </div>
-                      ) : (
-                        availableDrivers.map((driver) => (
-                          <SelectItem key={driver.id} value={driver.name}>
-                            {driver.name}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
+                  <DriverSearchSelect
+                    drivers={availableDrivers.map((d) => ({
+                      id: String(d.id),
+                      name: String(d.name ?? ''),
+                      licenseNumber: d.licenseNumber != null ? String(d.licenseNumber) : undefined,
+                      phone: d.phone != null ? String(d.phone) : undefined,
+                      photoUrl: d.photoUrl != null ? String(d.photoUrl) : undefined,
+                    }))}
+                    value={newTrip.driverId}
+                    onValueChange={(driverId) => {
+                      const driver = availableDrivers.find(
+                        (d) => String(d.id) === String(driverId)
+                      );
+                      setNewTrip({
+                        ...newTrip,
+                        driverId,
+                        driver: driver ? String(driver.name) : '',
+                      });
+                    }}
+                  />
                 </div>
                 
                 <div>
@@ -1278,7 +1586,21 @@ export function TripBooking() {
                 </div>
 
                 {newTrip.fare && parseFloat(newTrip.fare) > 0 && (
-                  <TierInfoCard fare={parseFloat(newTrip.fare)} />
+                  <TierInfoCard fare={parseFloat(newTrip.fare)} tiers={commissionTiers} />
+                )}
+                {scheduleFullCoachCommission && (
+                  <Alert className="border-[#193cb8]/30 bg-[#193cb8]/5">
+                    <Calculator className="h-4 w-4" />
+                    <AlertDescription>
+                      If this vehicle fills all{' '}
+                      <strong>{scheduleCapacity} seats</strong> at ₵{scheduleFare.toFixed(2)} per
+                      passenger, RISE commission (amount station remits) is{' '}
+                      <strong>
+                        ₵{scheduleFullCoachCommission.totalCommission.toFixed(2)}
+                      </strong>
+                      .
+                    </AlertDescription>
+                  </Alert>
                 )}
 
                 <Button onClick={handleScheduleTrip} className="w-full" disabled={isSubmitting}>
@@ -1398,7 +1720,7 @@ export function TripBooking() {
           else closePassengerBookDialog();
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Book passengers</DialogTitle>
             <DialogDescription>
@@ -1407,7 +1729,7 @@ export function TripBooking() {
                   {String(activeBookingTrip.routeFrom ?? '')} →{' '}
                   {String(activeBookingTrip.routeTo ?? '')} ·{' '}
                   {activeBookingTrip.departureTime
-                    ? new Date(String(activeBookingTrip.departureTime)).toLocaleString()
+                    ? formatTripDepartureDisplay(activeBookingTrip)
                     : ''}
                 </>
               ) : (
@@ -1480,7 +1802,7 @@ export function TripBooking() {
               </TableHeader>
               <TableBody>
                 {userTrips.map((trip) => {
-                  const tierInfo = calculateTierInfo(trip.fare, trip.booked);
+                  const tierInfo = calculateTierInfo(commissionTiers, trip.fare, trip.booked);
                   return (
                     <TableRow key={trip.id}>
                       <TableCell>
@@ -1491,8 +1813,7 @@ export function TripBooking() {
                       </TableCell>
                       <TableCell>
                         <div>
-                          <p className="text-sm">{new Date(trip.departureTime).toLocaleDateString()}</p>
-                          <p className="text-sm text-gray-500">{new Date(trip.departureTime).toLocaleTimeString()}</p>
+                          <p className="text-sm">{formatTripDepartureDisplay(trip)}</p>
                         </div>
                       </TableCell>
                       <TableCell>{trip.vehicle}</TableCell>
@@ -1505,7 +1826,49 @@ export function TripBooking() {
                           </p>
                         </div>
                       </TableCell>
-                      <TableCell>{getStatusBadge(trip.status)}</TableCell>
+                      <TableCell>
+                        <div className="space-y-1 min-w-[140px]">
+                          {getStatusBadge(String(trip.status ?? 'scheduled'))}
+                          {trip.statusReason ? (
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                              {String(trip.statusReason)}
+                            </p>
+                          ) : null}
+                          <Select
+                            value={String(trip.status ?? 'scheduled')}
+                            onValueChange={(value) => {
+                              if (value === 'journey_started') {
+                                void handleStartJourneyForTrip(String(trip.id), trip);
+                                return;
+                              }
+                              if (tripStatusRequiresReason(value)) {
+                                const reason = window.prompt(
+                                  `Reason (required for ${tripStatusLabel(value)}):`
+                                );
+                                if (!reason?.trim()) return;
+                                void handleTripOperationStatus(
+                                  String(trip.id),
+                                  value,
+                                  reason.trim()
+                                );
+                                return;
+                              }
+                              void handleTripOperationStatus(String(trip.id), value);
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Update status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TRIP_OPERATION_STATUSES.map((s) => (
+                                <SelectItem key={s.value} value={s.value}>
+                                  {s.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </TableCell>
                       <TableCell>₵{trip.fare}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={tierInfo.tier.color}>
@@ -1522,7 +1885,7 @@ export function TripBooking() {
                         <span className="font-medium text-green-600">₵{tierInfo.netRevenue.toFixed(2)}</span>
                       </TableCell>
                       <TableCell>
-                        <div className="flex space-x-2">
+                        <div className="flex flex-wrap gap-2">
                           <Button 
                             variant="outline" 
                             size="sm"
@@ -1530,12 +1893,41 @@ export function TripBooking() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          {trip.available > 0 && (
+                          {getTripSeatStats(trip).canBook && (
                             <Button 
                               size="sm"
                               onClick={() => openBookPassengerModal(trip.id)}
                             >
                               Book
+                            </Button>
+                          )}
+                          {canStartTripJourney(trip) && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={journeyActionTripId === String(trip.id)}
+                              onClick={() => void handleStartJourneyForTrip(String(trip.id), trip)}
+                            >
+                              {journeyActionTripId === String(trip.id) ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Bus className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
+                          {canPrintPoliceCheck(trip) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              title="Print police receipt check"
+                              disabled={journeyActionTripId === String(trip.id)}
+                              onClick={() => void handlePrintPoliceCheck(String(trip.id), trip)}
+                            >
+                              {journeyActionTripId === String(trip.id) ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Shield className="h-4 w-4" />
+                              )}
                             </Button>
                           )}
                         </div>
@@ -1545,6 +1937,13 @@ export function TripBooking() {
                 })}
               </TableBody>
             </Table>
+            <TablePagination
+              page={tripsPage}
+              pagination={tripsPagination}
+              onPageChange={setTripsPage}
+              loading={tripsLoading}
+              itemLabel="trips"
+            />
           </CardContent>
         </Card>
       </div>
@@ -1569,7 +1968,7 @@ export function TripBooking() {
             <div className="space-y-4">
               <div className="text-sm text-gray-600">
                 <p>Trip ID: {selectedTrip.id}</p>
-                <p>Departure: {new Date(selectedTrip.departureTime).toLocaleString()}</p>
+                <p>Departure: {formatTripDepartureDisplay(selectedTrip)}</p>
                 <p>Passengers: {selectedTrip.booked}/{selectedTrip.capacity}</p>
               </div>
 
@@ -1579,19 +1978,19 @@ export function TripBooking() {
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
                       <p className="text-muted-foreground">Trip Revenue</p>
-                      <p className="font-medium">₵{calculateTierInfo(selectedTrip.fare, selectedTrip.booked).tripRevenue.toFixed(2)}</p>
+                      <p className="font-medium">₵{calculateTierInfo(commissionTiers, selectedTrip.fare, selectedTrip.booked).tripRevenue.toFixed(2)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Commission</p>
-                      <p className="font-medium text-[#193cb8]">₵{calculateTierInfo(selectedTrip.fare, selectedTrip.booked).totalCommission.toFixed(2)}</p>
+                      <p className="font-medium text-[#193cb8]">₵{calculateTierInfo(commissionTiers, selectedTrip.fare, selectedTrip.booked).totalCommission.toFixed(2)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Net Revenue</p>
-                      <p className="font-medium text-green-600">₵{calculateTierInfo(selectedTrip.fare, selectedTrip.booked).netRevenue.toFixed(2)}</p>
+                      <p className="font-medium text-green-600">₵{calculateTierInfo(commissionTiers, selectedTrip.fare, selectedTrip.booked).netRevenue.toFixed(2)}</p>
                     </div>
                   </div>
                   <div className="mt-2 pt-2 border-t">
-                    <TierBadge fare={selectedTrip.fare} showCommission={true} />
+                    <TierBadge fare={selectedTrip.fare} tiers={commissionTiers} showCommission={true} />
                   </div>
                 </div>
               )}
@@ -1601,6 +2000,7 @@ export function TripBooking() {
                   <Loader2 className="h-6 w-6 animate-spin text-[#193cb8]" />
                 </div>
               ) : dialogPassengers.length > 0 ? (
+                <ScrollArea className="max-h-[min(50vh,420px)] pr-3">
                 <div className="space-y-3">
                   {dialogPassengers.map((passenger: TripRecord, index: number) => (
                     <div key={index} className="p-4 bg-gray-50 rounded border">
@@ -1632,6 +2032,7 @@ export function TripBooking() {
                     </div>
                   ))}
                 </div>
+                </ScrollArea>
               ) : (
                 <p className="text-center text-gray-500 py-8">No passengers booked yet</p>
               )}
@@ -1639,6 +2040,84 @@ export function TripBooking() {
           )}
         </DialogContent>
       </Dialog>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Driver trip history</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Search trips by driver to see success or failure and reasons
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-2">
+              <Label>Driver</Label>
+              <Select value={driverHistoryDriverId} onValueChange={setDriverHistoryDriverId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select driver" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableDrivers.map((d) => (
+                    <SelectItem key={String(d.id)} value={String(d.id)}>
+                      {String(d.name ?? d.id)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Search route / trip ID</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={driverHistorySearch}
+                  onChange={(e) => setDriverHistorySearch(e.target.value)}
+                  placeholder="Accra, TRIP-…"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={driverHistoryLoading}
+                  onClick={() => void loadDriverTripHistory()}
+                >
+                  {driverHistoryLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    'Search'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+          {driverHistoryTrips.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Route</TableHead>
+                  <TableHead>Departure</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {driverHistoryTrips.map((trip) => (
+                  <TableRow key={String(trip.id)}>
+                    <TableCell>
+                      {trip.routeFrom} → {trip.routeTo}
+                    </TableCell>
+                    <TableCell>{formatTripDepartureDisplay(trip)}</TableCell>
+                    <TableCell>{getStatusBadge(String(trip.status ?? ''))}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {trip.statusReason ? String(trip.statusReason) : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No trips loaded yet.</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

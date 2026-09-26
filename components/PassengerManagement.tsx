@@ -26,7 +26,10 @@ import {
   User,
   UserPlus,
   Loader2,
-  Shield
+  Shield,
+  Pencil,
+  Trash2,
+  Bus,
 } from 'lucide-react';
 import { Separator } from './ui/separator';
 import { Textarea } from './ui/textarea';
@@ -45,6 +48,8 @@ import { tripApi, passengerApi, ticketApi, parseListResponse, formatApiError } f
 import { isGlobalDataScope, listParamsForDataEntry } from './utils/stationScope';
 import { useDataEntryStation } from './shared/hooks/useDataEntryStation';
 import { DataEntryStationBanner } from './shared/DataEntryStationBanner';
+import { useClientPagination } from './shared/hooks/useClientPagination';
+import { TablePagination } from './shared/TablePagination';
 import { buildETicketUrl, issueETicket } from './utils/eTicket';
 import { downloadCsv } from './utils/helpers';
 import {
@@ -70,6 +75,21 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from './ui/dropdown-menu';
+import { getTripSeatStats } from './utils/tripSeats';
+import { formatTripDepartureDisplay, getTripDepartureIso } from './utils/tripDateTime';
+import {
+  filterTripsForBookingList,
+  isBranchManagerRole,
+  isTripClosedForNewBookings,
+} from './utils/tripPassengerVisibility';
+import {
+  canPrintPoliceCheck,
+  canStartTripJourney,
+  printPoliceCheckForTrip,
+  startTripJourneyAndPrint,
+} from './utils/tripJourney';
+import { TRIP_OPERATION_STATUSES, tripStatusLabel } from './constants/tripOperationStatus';
+import { printDriverBookingSummary, summaryFromTrip } from './utils/driverBookingSummary';
 
 type TripRecord = Record<string, unknown>;
 type PassengerRecord = Record<string, unknown>;
@@ -106,21 +126,35 @@ function emergencyFromPassenger(passenger: PassengerRecord): {
   };
 }
 
+function tripFareString(trip: TripRecord): string {
+  const amount = Number(trip.fare ?? trip.totalFare ?? trip.baseFare ?? 0);
+  return amount > 0 ? String(amount) : '';
+}
+
 function formatTripForDisplay(trip: TripRecord): TripRecord {
   const routeFrom = String(trip.routeFrom ?? '');
   const routeTo = String(trip.routeTo ?? '');
   const routeParts = String(trip.route ?? '').split(/\s*(?:→|to)\s*/i);
-  const departure = String(trip.departureTime ?? '');
+  const departureIso = getTripDepartureIso(trip);
+  const [datePart, timePart] = departureIso ? departureIso.split('T') : ['', ''];
   return {
     ...trip,
     route: trip.route ?? `${routeFrom || routeParts[0]?.trim() || 'Unknown'} to ${routeTo || routeParts[1]?.trim() || 'Unknown'}`,
-    date: departure.split('T')[0] ?? '',
-    time: departure.split('T')[1]?.substring(0, 5) ?? '',
+    date: datePart,
+    time: timePart?.substring(0, 5) ?? '',
+    departureDisplay: formatTripDepartureDisplay(trip),
     driver: trip.driver ?? trip.driverName ?? '',
     vehicle: trip.vehicle ?? trip.vehicleRegistration ?? '',
-    passengerCount: Number(trip.passengerCount ?? trip.booked ?? trip.bookedSeats ?? 0),
-    capacity: Number(trip.capacity ?? 0),
-    status: trip.status === 'on_road' ? 'in-progress' : trip.status,
+    ...(() => {
+      const stats = getTripSeatStats(trip);
+      return {
+        passengerCount: stats.booked,
+        capacity: stats.capacity,
+        canBook: stats.canBook,
+        isFull: stats.isFull,
+      };
+    })(),
+    status: trip.status,
   };
 }
 
@@ -128,6 +162,7 @@ export function PassengerManagement() {
   const { user } = useAuth();
   const { pendingAction, clearAction } = usePageAction();
   const isGlobalUser = isGlobalDataScope(user?.role);
+  const isBranchManager = isBranchManagerRole(user?.role);
   const dataEntry = useDataEntryStation();
 
   const fetchTrips = useCallback(
@@ -142,6 +177,10 @@ export function PassengerManagement() {
   });
 
   const trips = useMemo(() => rawTrips.map(formatTripForDisplay), [rawTrips]);
+  const tripsForBooking = useMemo(
+    () => filterTripsForBookingList(trips, isBranchManager),
+    [trips, isBranchManager]
+  );
   const [passengers, setPassengers] = useState<PassengerRecord[]>([]);
   const [passengersLoading, setPassengersLoading] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<string>('');
@@ -161,6 +200,13 @@ export function PassengerManagement() {
   const [addBookingQueue, setAddBookingQueue] = useState<QueuedPassengerBooking[]>([]);
   const [addBulkSubmitting, setAddBulkSubmitting] = useState(false);
   const addPhoneLookupSeq = useRef(0);
+  const [addTripSearch, setAddTripSearch] = useState('');
+  const [editPassenger, setEditPassenger] = useState<PassengerRecord | null>(null);
+  const [editForm, setEditForm] = useState<PassengerBookingFormValues>({
+    ...EMPTY_PASSENGER_BOOKING_FORM,
+  });
+  const [editSaving, setEditSaving] = useState(false);
+  const [journeyStarting, setJourneyStarting] = useState(false);
 
   const patchNewPassengerForm = (updates: Partial<PassengerBookingFormValues>) => {
     if (updates.phone !== undefined) {
@@ -182,6 +228,7 @@ export function PassengerManagement() {
     setAddProfileFound(false);
     setAddDuplicateOnTrip(false);
     setAddBookingQueue([]);
+    setAddTripSearch('');
   };
   const [detailPassenger, setDetailPassenger] = useState<PassengerRecord | null>(null);
   const [contactPassenger, setContactPassenger] = useState<PassengerRecord | null>(null);
@@ -263,6 +310,30 @@ export function PassengerManagement() {
   }, [newPassenger.tripId, showAddDialog]);
 
   useEffect(() => {
+    if (!showAddDialog || !newPassenger.tripId) return;
+    const trip = trips.find((t) => String(t.id) === String(newPassenger.tripId));
+    if (!trip) return;
+    const fareStr = tripFareString(trip);
+    const stationName =
+      dataEntry.selectedStation?.name ||
+      user?.stationName ||
+      String(trip.stationName ?? '');
+    setNewPassenger((prev) => ({
+      ...prev,
+      ...(fareStr && prev.fare !== fareStr ? { fare: fareStr } : {}),
+      ...(stationName && !prev.boardingPoint?.trim()
+        ? { boardingPoint: stationName }
+        : {}),
+    }));
+  }, [
+    showAddDialog,
+    newPassenger.tripId,
+    trips,
+    dataEntry.selectedStation?.name,
+    user?.stationName,
+  ]);
+
+  useEffect(() => {
     if (!showAddDialog) return;
     setAddDuplicateOnTrip(
       newPassenger.tripId
@@ -316,7 +387,20 @@ export function PassengerManagement() {
   const today = new Date().toISOString().split('T')[0];
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
-  const filteredTrips = trips.filter((trip) => {
+  const reloadManifest = useCallback(async () => {
+    if (!selectedTrip) return;
+    setPassengersLoading(true);
+    try {
+      const response = await passengerApi.getTripPassengers(selectedTrip);
+      if (response.success && response.data !== undefined) {
+        setPassengers(parseListResponse<PassengerRecord>(response.data, 'passengers'));
+      }
+    } finally {
+      setPassengersLoading(false);
+    }
+  }, [selectedTrip]);
+
+  const filteredTrips = tripsForBooking.filter((trip) => {
     const tripDate = String(trip.date ?? '');
     const matchesDate =
       dateFilter === 'all' ||
@@ -350,14 +434,26 @@ export function PassengerManagement() {
     return matchesStatus && matchesSearch;
   });
 
-  const getStatusBadge = (status: string) => {
+  const passengerListResetKey = `${selectedTrip}|${searchQuery}|${statusFilter}`;
+  const {
+    paginatedItems: pagedPassengers,
+    page: passengerPage,
+    setPage: setPassengerPage,
+    pagination: passengerPagination,
+  } = useClientPagination(filteredPassengers, undefined, passengerListResetKey);
+
+  const getTripStatusBadge = (status: string) => {
+    const statusInfo = TRIP_OPERATION_STATUSES.find((s) => s.value === status);
+    if (statusInfo) {
+      return (
+        <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
+      );
+    }
+    return <Badge variant="secondary">{tripStatusLabel(status)}</Badge>;
+  };
+
+  const getPassengerStatusBadge = (status: string) => {
     switch (status) {
-      case 'completed':
-        return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Completed</Badge>;
-      case 'in-progress':
-        return <Badge className="bg-[#193cb8]/10 text-[#193cb8] hover:bg-[#193cb8]/20">In Progress</Badge>;
-      case 'scheduled':
-        return <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">Scheduled</Badge>;
       case 'boarded':
         return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Boarded</Badge>;
       case 'checked-in':
@@ -385,16 +481,166 @@ export function PassengerManagement() {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
+  const addDialogTrips = useMemo(() => {
+    const query = addTripSearch.trim().toLowerCase();
+    if (!query) return tripsForBooking;
+    return tripsForBooking.filter((trip) => {
+      const route = String(trip.route ?? '').toLowerCase();
+      const driver = String(trip.driver ?? '').toLowerCase();
+      const vehicle = String(trip.vehicle ?? '').toLowerCase();
+      const id = String(trip.id ?? '').toLowerCase();
+      const date = String(trip.date ?? '');
+      const time = String(trip.time ?? '');
+      return (
+        route.includes(query) ||
+        driver.includes(query) ||
+        vehicle.includes(query) ||
+        id.includes(query) ||
+        date.includes(query) ||
+        time.includes(query)
+      );
+    });
+  }, [tripsForBooking, addTripSearch]);
+
+  const openEditPassenger = (passenger: PassengerRecord) => {
+    const emergency = emergencyFromPassenger(passenger);
+    setEditForm({
+      ...EMPTY_PASSENGER_BOOKING_FORM,
+      name: field(passenger, 'name'),
+      phone: field(passenger, 'phone'),
+      email: field(passenger, 'email'),
+      seatNumber: field(passenger, 'seatNumber'),
+      boardingPoint: field(passenger, 'boardingPoint'),
+      dropoffPoint: field(passenger, 'dropoffPoint'),
+      fare: field(passenger, 'fare'),
+      emergencyContactName: emergency.name,
+      emergencyContactPhone: emergency.phone,
+      emergencyContactRelationship: emergency.relationship,
+    });
+    setEditPassenger(passenger);
+    setDetailPassenger(null);
+  };
+
+  const handleSavePassengerEdit = async () => {
+    if (!editPassenger || !selectedTrip) return;
+    const validationError = validatePassengerBookingForm(editForm, {
+      returningPassenger: false,
+      hasStoredEmergency: false,
+    });
+    if (validationError) {
+      notify.error(validationError);
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const response = await passengerApi.updateTripPassenger(
+        selectedTrip,
+        field(editPassenger, 'id'),
+        {
+          name: editForm.name,
+          phone: editForm.phone,
+          email: editForm.email,
+          seatNumber: editForm.seatNumber,
+          boardingPoint: editForm.boardingPoint,
+          dropoffPoint: editForm.dropoffPoint,
+          emergencyContactName: editForm.emergencyContactName,
+          emergencyContactPhone: editForm.emergencyContactPhone,
+          emergencyContactRelationship: editForm.emergencyContactRelationship,
+        }
+      );
+      if (!response.success) {
+        notify.error(formatApiError(response.error, 'Failed to update passenger'));
+        return;
+      }
+      notify.success('Passenger details updated');
+      setEditPassenger(null);
+      await reloadManifest();
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleRemovePassengerFromTrip = async (passenger: PassengerRecord) => {
+    if (!selectedTrip) return;
+    if (
+      !window.confirm(
+        `Remove ${field(passenger, 'name')} from this trip? A seat will open for another booking.`
+      )
+    ) {
+      return;
+    }
+    const response = await passengerApi.removeFromTrip(
+      selectedTrip,
+      field(passenger, 'id')
+    );
+    if (!response.success) {
+      notify.error(formatApiError(response.error, 'Could not remove passenger'));
+      return;
+    }
+    notify.success('Passenger removed — trip seats updated');
+    await reloadManifest();
+    await refreshTrips();
+  };
+
+  const handleStartJourneyAndPrintPoliceCheck = async () => {
+    if (!selectedTrip || !selectedTripData) return;
+    const stationName =
+      dataEntry.selectedStation?.name || user?.stationName || 'RISE Station';
+    const rawTrip =
+      rawTrips.find((t) => String(t.id) === selectedTrip) ?? selectedTripData;
+    const tripForAction = { ...selectedTripData, ...rawTrip, status: rawTrip.status };
+
+    if (canPrintPoliceCheck(tripForAction)) {
+      setJourneyStarting(true);
+      try {
+        const result = await printPoliceCheckForTrip({
+          tripId: selectedTrip,
+          trip: tripForAction,
+          stationName,
+          branchPhone: user?.phone,
+        });
+        if (!result.ok) {
+          notify.error(result.error ?? 'Could not print police check');
+          return;
+        }
+        notify.info('Police receipt check sent to printer');
+      } finally {
+        setJourneyStarting(false);
+      }
+      return;
+    }
+
+    setJourneyStarting(true);
+    try {
+      const result = await startTripJourneyAndPrint({
+        tripId: selectedTrip,
+        trip: tripForAction,
+        stationName,
+        branchPhone: user?.phone,
+      });
+      if (!result.ok) {
+        notify.error(result.error ?? 'Failed to start journey');
+        return;
+      }
+      notify.success('Journey started — police receipt check sent to printer');
+      await refreshTrips();
+    } finally {
+      setJourneyStarting(false);
+    }
+  };
+
   const buildBookInputFromEntry = (
     entry: PassengerBookingFormValues,
     trip: TripRecord
   ) => {
     const routeText = String(trip.route ?? '');
     const [routeFrom, routeTo] = routeText.split(/\s+to\s+/i);
-    const fare = parseFloat(entry.fare) || Number(trip.fare ?? trip.totalFare ?? 45);
-    const departureTime = trip.departureTime
-      ? String(trip.departureTime)
-      : `${trip.date}T${trip.time}:00`;
+    const fare =
+      parseFloat(entry.fare) ||
+      Number(trip.fare ?? trip.totalFare ?? trip.baseFare ?? 45);
+    const departureTime =
+      getTripDepartureIso(trip) ||
+      (trip.date && trip.time ? `${trip.date}T${trip.time}:00` : String(trip.departureTime ?? ''));
 
     return {
       tripId: String(trip.id),
@@ -428,7 +674,15 @@ export function PassengerManagement() {
       notify.error('Please select a trip');
       return;
     }
-    const validationError = validatePassengerBookingForm(newPassenger);
+    const hasStoredEmergency = Boolean(
+      newPassenger.emergencyContactName?.trim() &&
+        newPassenger.emergencyContactPhone?.trim() &&
+        newPassenger.emergencyContactRelationship?.trim()
+    );
+    const validationError = validatePassengerBookingForm(newPassenger, {
+      returningPassenger: addProfileFound,
+      hasStoredEmergency,
+    });
     if (validationError) {
       notify.error(validationError);
       return;
@@ -444,6 +698,16 @@ export function PassengerManagement() {
     const trip = trips.find((t) => String(t.id) === String(newPassenger.tripId));
     if (!trip) {
       notify.error('Selected trip not found');
+      return;
+    }
+    if (!isBranchManager && isTripClosedForNewBookings(trip)) {
+      notify.error('This trip is full — contact your branch manager to make changes');
+      await refreshTrips();
+      return;
+    }
+    if (!getTripSeatStats(trip).canBook) {
+      notify.error('This trip is full — no seats remaining');
+      await refreshTrips();
       return;
     }
 
@@ -470,9 +734,21 @@ export function PassengerManagement() {
       await refreshTrips();
       const manifestRes = await passengerApi.getTripPassengers(newPassenger.tripId);
       if (manifestRes.success && manifestRes.data !== undefined) {
-        setAddTripManifest(
-          parseListResponse<PassengerRecord>(manifestRes.data, 'passengers')
-        );
+        const manifest = parseListResponse<PassengerRecord>(manifestRes.data, 'passengers');
+        setAddTripManifest(manifest);
+        const cap = Number(trip.capacity ?? 0);
+        if (cap > 0 && manifest.length >= cap) {
+          notify.success('Trip is now fully booked', {
+            description: 'Printing driver summary for police inspection.',
+          });
+          const origin =
+            dataEntry.selectedStation?.name ||
+            user?.stationName ||
+            String(trip.stationName ?? 'RISE Station');
+          printDriverBookingSummary(
+            summaryFromTrip(trip, origin, manifest.length)
+          );
+        }
       }
     } catch {
       // issueETicket shows errors
@@ -728,7 +1004,7 @@ export function PassengerManagement() {
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <h3 className="font-semibold">{trip.route}</h3>
-                          {getStatusBadge(trip.status)}
+                          {getTripStatusBadge(String(trip.status ?? ''))}
                         </div>
                         
                         <div className="space-y-2 text-sm text-muted-foreground">
@@ -765,6 +1041,11 @@ export function PassengerManagement() {
                 <div className="text-center py-8 text-muted-foreground">
                   <MapPin className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No trips found matching your criteria</p>
+                  {!isBranchManager && (
+                    <p className="text-sm mt-2 max-w-md mx-auto">
+                      Fully booked trips are visible only to branch managers for manifest edits.
+                    </p>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -792,8 +1073,33 @@ export function PassengerManagement() {
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {getStatusBadge(selectedTripData.status)}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {getTripStatusBadge(String(selectedTripData.status ?? ''))}
+                      {isTripClosedForNewBookings(selectedTripData) && isBranchManager && (
+                        <Badge variant="outline" className="text-amber-800 border-amber-300">
+                          Full — manager manifest edit
+                        </Badge>
+                      )}
+                      {(canPrintPoliceCheck(selectedTripData) ||
+                        canStartTripJourney(selectedTripData)) && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          disabled={journeyStarting || tripPassengers.length === 0}
+                          onClick={() => void handleStartJourneyAndPrintPoliceCheck()}
+                        >
+                          {journeyStarting ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : canPrintPoliceCheck(selectedTripData) ? (
+                            <Shield className="h-4 w-4 mr-2" />
+                          ) : (
+                            <Bus className="h-4 w-4 mr-2" />
+                          )}
+                          {canPrintPoliceCheck(selectedTripData)
+                            ? 'Print police check'
+                            : 'Start journey & print police check'}
+                        </Button>
+                      )}
                       <Button
                         onClick={() => void exportPassengerList()}
                         variant="outline"
@@ -869,7 +1175,7 @@ export function PassengerManagement() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredPassengers.map((passenger) => (
+                        {pagedPassengers.map((passenger) => (
                           <TableRow key={String(passenger.id)}>
                             <TableCell>
                               <div className="flex items-center gap-3">
@@ -915,7 +1221,7 @@ export function PassengerManagement() {
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 {getStatusIcon(field(passenger, 'status'))}
-                                {getStatusBadge(field(passenger, 'status'))}
+                                {getPassengerStatusBadge(field(passenger, 'status'))}
                               </div>
                             </TableCell>
                             <TableCell>
@@ -933,6 +1239,21 @@ export function PassengerManagement() {
                                     View Details
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
+                                    onClick={() => openEditPassenger(passenger)}
+                                  >
+                                    <Pencil className="h-4 w-4 mr-2" />
+                                    Edit details
+                                  </DropdownMenuItem>
+                                  {isBranchManager && (
+                                    <DropdownMenuItem
+                                      className="text-red-600 focus:text-red-600"
+                                      onClick={() => void handleRemovePassengerFromTrip(passenger)}
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Remove from trip
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem
                                     onClick={() => openContactDialog(passenger)}
                                   >
                                     <MessageSquare className="h-4 w-4 mr-2" />
@@ -946,6 +1267,13 @@ export function PassengerManagement() {
                       </TableBody>
                     </Table>
                   </div>
+
+                  <TablePagination
+                    page={passengerPage}
+                    pagination={passengerPagination}
+                    onPageChange={setPassengerPage}
+                    itemLabel="passengers"
+                  />
 
                   {filteredPassengers.length === 0 && (
                     <div className="text-center py-8 text-muted-foreground">
@@ -988,7 +1316,7 @@ export function PassengerManagement() {
                 <div>
                   <p className="font-semibold text-base">{field(detailPassenger, 'name')}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    {getStatusBadge(field(detailPassenger, 'status'))}
+                    {getPassengerStatusBadge(field(detailPassenger, 'status'))}
                   </div>
                 </div>
               </div>
@@ -1069,12 +1397,71 @@ export function PassengerManagement() {
                   <MessageSquare className="h-4 w-4 mr-2" />
                   Contact
                 </Button>
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => {
+                    openEditPassenger(detailPassenger);
+                  }}
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
                 <Button className="flex-1" onClick={() => setDetailPassenger(null)}>
                   Close
                 </Button>
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editPassenger != null}
+        onOpenChange={(open) => {
+          if (!open && !editSaving) setEditPassenger(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit passenger</DialogTitle>
+            <DialogDescription>
+              Update contact and emergency details for this manifest entry.
+            </DialogDescription>
+          </DialogHeader>
+          <PassengerBookingFormFields
+            idPrefix="edit-passenger"
+            values={editForm}
+            onChange={(updates) => setEditForm((prev) => ({ ...prev, ...updates }))}
+            showSeatNumber
+            showRoutePoints
+            compactWhenProfileFound={false}
+          />
+          <div className="flex flex-col sm:flex-row gap-2 pt-2">
+            <Button
+              className="flex-1"
+              disabled={editSaving}
+              onClick={() => void handleSavePassengerEdit()}
+            >
+              {editSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                'Save changes'
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              disabled={editSaving}
+              onClick={() => setEditPassenger(null)}
+            >
+              Cancel
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1149,7 +1536,7 @@ export function PassengerManagement() {
           else closeAddPassengerDialog();
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add passengers</DialogTitle>
             <DialogDescription>
@@ -1158,7 +1545,26 @@ export function PassengerManagement() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="add-trip">Trip *</Label>
+              <Label htmlFor="add-trip-search">Find trip *</Label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="add-trip-search"
+                    value={addTripSearch}
+                    onChange={(e) => setAddTripSearch(e.target.value)}
+                    placeholder="Search route, driver, vehicle, date, or trip ID…"
+                    className="pl-10"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void refreshTrips()}
+                >
+                  Refresh trips
+                </Button>
+              </div>
               <Select
                 value={newPassenger.tripId || undefined}
                 onValueChange={(value) =>
@@ -1166,18 +1572,28 @@ export function PassengerManagement() {
                 }
               >
                 <SelectTrigger id="add-trip">
-                  <SelectValue placeholder="Select trip" />
+                  <SelectValue placeholder="Select from search results" />
                 </SelectTrigger>
                 <SelectContent>
-                  {trips
-                    .filter((trip) => trip.status !== 'completed' && trip.status !== 'arrived')
-                    .map((trip) => (
+                  {addDialogTrips.map((trip) => (
                       <SelectItem key={String(trip.id)} value={String(trip.id)}>
                         {String(trip.route)} — {String(trip.date)} {String(trip.time)}
+                        {getTripSeatStats(trip).isFull ? ' (full)' : ''}
                       </SelectItem>
                     ))}
                 </SelectContent>
               </Select>
+              {addDialogTrips.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No trips match your search
+                  {!isBranchManager ? ' (fully booked trips are manager-only)' : ''}.
+                </p>
+              )}
+              {newPassenger.tripId && tripFareString(trips.find((t) => String(t.id) === newPassenger.tripId) ?? {}) ? (
+                <p className="text-xs text-muted-foreground">
+                  Trip fare: ₵{tripFareString(trips.find((t) => String(t.id) === newPassenger.tripId) ?? {})}
+                </p>
+              ) : null}
             </div>
             <PassengerBookingFormFields
               idPrefix="add-passenger"
@@ -1186,9 +1602,11 @@ export function PassengerManagement() {
               showSeatNumber
               showRoutePoints
               showFare
+              fareReadOnly={Boolean(newPassenger.tripId && tripFareString(trips.find((t) => String(t.id) === newPassenger.tripId) ?? {}))}
               phoneLookup={addPhoneLookup}
               profileFound={addProfileFound}
               duplicateOnTrip={addDuplicateOnTrip}
+              compactWhenProfileFound={false}
             />
             <PassengerBookingQueuePanel queue={addBookingQueue} />
             <div className="flex flex-col sm:flex-row gap-2 pt-2">

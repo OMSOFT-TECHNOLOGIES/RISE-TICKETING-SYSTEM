@@ -78,6 +78,23 @@ export const passengerApi = {
     });
   },
 
+  updateTripPassenger: async (
+    tripId: string,
+    id: string,
+    data: Record<string, unknown>
+  ): Promise<ApiResponse> => {
+    return apiRequest(`/api/trips/${tripId}/passengers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  removeFromTrip: async (tripId: string, id: string): Promise<ApiResponse> => {
+    return apiRequest(`/api/trips/${tripId}/passengers/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
   exportTripPassengers: async (
     tripId: string,
     format?: 'csv' | 'excel'

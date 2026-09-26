@@ -6,7 +6,9 @@ import { Label } from '../../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
 import { COMPLAINT_CATEGORIES } from '../constants';
+import type { ListPagination } from '../../utils/api/client';
 import type { Complaint, ComplaintFilters } from '../types';
+import { TablePagination } from '../../shared/TablePagination';
 import { formatFeedbackDate, getCategoryLabel } from '../utils';
 import { PriorityBadge } from './PriorityBadge';
 import { StatusBadge } from './StatusBadge';
@@ -17,6 +19,10 @@ interface ComplaintsTabProps {
   onFiltersChange: (updates: Partial<ComplaintFilters>) => void;
   onViewComplaint: (complaint: Complaint) => void;
   onExport: () => void;
+  page?: number;
+  pagination?: ListPagination | null;
+  onPageChange?: (page: number) => void;
+  loading?: boolean;
 }
 
 export function ComplaintsTab({
@@ -25,6 +31,10 @@ export function ComplaintsTab({
   onFiltersChange,
   onViewComplaint,
   onExport,
+  page = 1,
+  pagination = null,
+  onPageChange,
+  loading = false,
 }: ComplaintsTabProps) {
   return (
     <div className="space-y-4">
@@ -84,7 +94,8 @@ export function ComplaintsTab({
         <div className="px-5 py-4 border-b">
           <h3 className="text-sm font-semibold">Complaints Queue</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {complaints.length} complaint{complaints.length !== 1 ? 's' : ''} matching filters
+            {pagination?.totalItems ?? complaints.length} complaint
+            {(pagination?.totalItems ?? complaints.length) !== 1 ? 's' : ''} matching filters
           </p>
         </div>
         <Table>
@@ -133,6 +144,16 @@ export function ComplaintsTab({
             )}
           </TableBody>
         </Table>
+        {onPageChange ? (
+          <TablePagination
+            page={page}
+            pagination={pagination}
+            onPageChange={onPageChange}
+            loading={loading}
+            itemLabel="complaints"
+            className="px-5"
+          />
+        ) : null}
       </div>
     </div>
   );

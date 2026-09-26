@@ -1,5 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authApi, removeAuthToken } from './utils/api';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { authApi } from './utils/api';
+import {
+  clearAuthTokens,
+  getAuthToken,
+  getRefreshToken,
+  refreshAccessToken,
+} from './utils/api/client';
+import { setSessionExpiredHandler, isAccessTokenExpired } from './utils/authSession';
+import { notify } from './utils/notify';
 
 export type UserRole = 
   | 'super_admin' 
@@ -27,6 +35,7 @@ export interface User {
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  authReady: boolean;
   user: User | null;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
@@ -182,28 +191,23 @@ function buildUserFromAuth(
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
-  useEffect(() => {
-    const storedAuth = localStorage.getItem('rise-auth');
-    if (storedAuth) {
-      try {
-        const { isAuthenticated: stored, user: storedUser } = JSON.parse(storedAuth);
-        if (stored && storedUser) {
-          const userData = buildUserFromAuth(storedUser);
-          setIsAuthenticated(true);
-          setUser(userData);
-          localStorage.setItem(
-            'rise-auth',
-            JSON.stringify({ isAuthenticated: true, user: userData })
-          );
-        }
-      } catch (error) {
-        console.error('Error parsing stored auth:', error);
-        localStorage.removeItem('rise-auth');
-      }
-    }
+  const clearLocalSession = useCallback(() => {
+    setIsAuthenticated(false);
+    setUser(null);
+    localStorage.removeItem('rise-auth');
+    clearAuthTokens();
   }, []);
+
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      clearLocalSession();
+      notify.warning('Your session has expired. Please sign in again.');
+    });
+    return () => setSessionExpiredHandler(null);
+  }, [clearLocalSession]);
 
   const persistSession = (userData: User) => {
     setIsAuthenticated(true);
@@ -213,6 +217,102 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       JSON.stringify({ isAuthenticated: true, user: userData })
     );
   };
+
+  const userFromMePayload = (raw: Record<string, unknown>): User =>
+    buildUserFromAuth({
+      id: String(raw.id ?? ''),
+      username: String(raw.username ?? ''),
+      email: String(raw.email ?? ''),
+      fullName: String(raw.fullName ?? raw.full_name ?? ''),
+      role: String(raw.role ?? ''),
+      stationId: raw.stationId != null ? String(raw.stationId) : undefined,
+      stationName: raw.stationName != null ? String(raw.stationName) : undefined,
+      region: raw.region != null ? String(raw.region) : undefined,
+      district: raw.district != null ? String(raw.district) : undefined,
+      permissions: Array.isArray(raw.permissions)
+        ? raw.permissions.map(String)
+        : [],
+    });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const bootstrap = async () => {
+      const storedAuth = localStorage.getItem('rise-auth');
+      const accessToken = getAuthToken();
+
+      if (!storedAuth || !accessToken) {
+        clearLocalSession();
+        if (!cancelled) setAuthReady(true);
+        return;
+      }
+
+      try {
+        const { isAuthenticated: stored, user: storedUser } = JSON.parse(storedAuth);
+        if (!stored || !storedUser) {
+          clearLocalSession();
+          if (!cancelled) setAuthReady(true);
+          return;
+        }
+
+        const cachedUser = buildUserFromAuth(storedUser);
+        setIsAuthenticated(true);
+        setUser(cachedUser);
+
+        if (isAccessTokenExpired(accessToken)) {
+          const refreshed = await refreshAccessToken();
+          if (!refreshed) {
+            clearLocalSession();
+            if (!cancelled) setAuthReady(true);
+            return;
+          }
+        }
+
+        const me = await authApi.getCurrentUser();
+        if (me.success && me.data && typeof me.data === 'object') {
+          const liveUser = userFromMePayload(me.data as Record<string, unknown>);
+          persistSession(liveUser);
+        } else {
+          const refreshed = await refreshAccessToken();
+          if (refreshed) {
+            const retry = await authApi.getCurrentUser();
+            if (retry.success && retry.data && typeof retry.data === 'object') {
+              persistSession(userFromMePayload(retry.data as Record<string, unknown>));
+            } else {
+              clearLocalSession();
+            }
+          } else {
+            clearLocalSession();
+          }
+        }
+      } catch (error) {
+        console.error('Auth bootstrap error:', error);
+        clearLocalSession();
+      } finally {
+        if (!cancelled) setAuthReady(true);
+      }
+    };
+
+    void bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clearLocalSession]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const interval = window.setInterval(() => {
+      const token = getAuthToken();
+      if (!token) return;
+      if (isAccessTokenExpired(token, 5 * 60 * 1000) && getRefreshToken()) {
+        void refreshAccessToken();
+      }
+    }, 60_000);
+
+    return () => window.clearInterval(interval);
+  }, [isAuthenticated]);
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
@@ -251,11 +351,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Always clear local state even if API call fails
-      setIsAuthenticated(false);
-      setUser(null);
-      localStorage.removeItem('rise-auth');
-      removeAuthToken();
+      clearLocalSession();
     }
   };
 
@@ -279,6 +375,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{
       isAuthenticated,
+      authReady,
       user,
       login,
       logout,

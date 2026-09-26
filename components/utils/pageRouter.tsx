@@ -31,8 +31,8 @@ interface PageRouterProps {
 
 const PAGE_COMPONENTS: Record<PageId, React.ComponentType> = {
   dashboard: Dashboard,
-  stations: StationManagement,
   unions: UnionManagement,
+  stations: StationManagement,
   vehicles: VehicleManagement,
   drivers: DriverManagement,
   trips: TripBooking,

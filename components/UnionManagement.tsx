@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -10,8 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Plus, Edit2, Trash2, Users, Phone, Mail, Calendar, MapPin, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, UserPlus, Phone, Mail, Calendar, MapPin, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { unionApi } from './utils/api';
+import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
+import { TablePagination } from './shared/TablePagination';
 
 interface Union {
   id: string;
@@ -29,9 +31,6 @@ interface Union {
 import { notify } from './utils/notify';
 
 export function UnionManagement() {
-  const [unions, setUnions] = useState<Union[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [unionToDelete, setUnionToDelete] = useState<Union | null>(null);
@@ -56,37 +55,30 @@ export function UnionManagement() {
     'Western North', 'Ahafo', 'Bono East', 'North East', 'Savannah', 'Oti'
   ];
 
-  // Fetch unions from backend
-  const fetchUnions = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await unionApi.getAll({ search: searchTerm || undefined });
-      
-      if (response.success && response.data) {
-        const unionsData = response.data.unions || response.data;
-        setUnions(Array.isArray(unionsData) ? unionsData : []);
-      } else {
-        console.error('Fetch unions error:', response);
-        setError(response.error || 'Failed to load unions');
-      }
-    } catch (err) {
-      console.error('Fetch unions exception:', err);
-      setError(err instanceof Error ? err.message : 'Failed to connect to server');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchUnions();
-  }, []);
-
-  const filteredUnions = unions.filter(union =>
-    union.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    union.acronym.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    union.region.toLowerCase().includes(searchTerm.toLowerCase())
+  const fetchUnionsPage = useCallback(
+    (page: number, limit: number) =>
+      unionApi.getAll({
+        page,
+        limit,
+        search: searchTerm.trim() || undefined,
+      }),
+    [searchTerm]
   );
+
+  const {
+    items: unions,
+    loading,
+    error,
+    refresh,
+    page,
+    setPage,
+    pagination,
+  } = usePaginatedEntityList<Union>({
+    fetchFn: fetchUnionsPage,
+    entityKey: 'unions',
+    errorMessage: 'Failed to load unions',
+    resetPageDeps: [searchTerm],
+  });
 
   const resetForm = () => {
     setFormData({
@@ -117,7 +109,7 @@ export function UnionManagement() {
         contactPerson: formData.contactPerson,
         contactPhone: formData.contactPhone,
         contactEmail: formData.contactEmail,
-        memberCount: formData.memberCount || 0,
+        memberCount: 0,
         isActive: formData.isActive,
         established: new Date().toISOString().split('T')[0]
       };
@@ -126,7 +118,7 @@ export function UnionManagement() {
 
       if (response.success) {
         notify.success(response.message || 'Union added successfully');
-        await fetchUnions();
+        await refresh();
         setIsAddDialogOpen(false);
         resetForm();
       } else {
@@ -167,6 +159,21 @@ export function UnionManagement() {
     setIsEditDialogOpen(true);
   };
 
+  const handleRegisterMember = async (union: Union) => {
+    try {
+      const nextCount = (union.memberCount ?? 0) + 1;
+      const response = await unionApi.update(union.id, { memberCount: nextCount });
+      if (response.success) {
+        notify.success(`Member registered — total ${nextCount}`);
+        await refresh();
+      } else {
+        notify.error('Failed to update member count');
+      }
+    } catch {
+      notify.error('Failed to register member');
+    }
+  };
+
   const handleUpdate = async () => {
     if (!editingUnion) return;
 
@@ -184,7 +191,7 @@ export function UnionManagement() {
         contactPerson: formData.contactPerson,
         contactPhone: formData.contactPhone,
         contactEmail: formData.contactEmail,
-        memberCount: formData.memberCount || 0,
+        memberCount: editingUnion?.memberCount ?? 0,
         isActive: formData.isActive
       };
 
@@ -192,7 +199,7 @@ export function UnionManagement() {
 
       if (response.success) {
         notify.success(response.message || 'Union updated successfully');
-        await fetchUnions();
+        await refresh();
         setIsEditDialogOpen(false);
         setEditingUnion(null);
         resetForm();
@@ -230,7 +237,7 @@ export function UnionManagement() {
 
       if (response.success) {
         notify.success(response.message || 'Union deleted successfully');
-        await fetchUnions();
+        await refresh();
         setUnionToDelete(null);
       } else {
         console.error('Union deletion error:', response);
@@ -275,7 +282,7 @@ export function UnionManagement() {
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <p className="text-red-600 mb-4">{error}</p>
-          <Button onClick={fetchUnions}>
+          <Button onClick={() => void refresh({ toastOnError: true })}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Retry
           </Button>
@@ -347,16 +354,9 @@ export function UnionManagement() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="memberCount">Member Count</Label>
-                <Input
-                  id="memberCount"
-                  type="number"
-                  value={formData.memberCount}
-                  onChange={(e) => setFormData({ ...formData, memberCount: parseInt(e.target.value) || 0 })}
-                  placeholder="0"
-                />
-              </div>
+              <p className="text-xs text-muted-foreground col-span-2">
+                Member totals start at zero and increase when you use &quot;Register member&quot; on a union row.
+              </p>
               <div className="space-y-2">
                 <Label htmlFor="contactPerson">Contact Person</Label>
                 <Input
@@ -414,7 +414,7 @@ export function UnionManagement() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{unions.length}</div>
+            <div className="text-2xl font-bold">{pagination?.totalItems ?? unions.length}</div>
           </CardContent>
         </Card>
         <Card>
@@ -466,7 +466,7 @@ export function UnionManagement() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredUnions.map((union) => (
+              {unions.map((union) => (
                 <TableRow key={union.id}>
                   <TableCell>
                     <div>
@@ -512,6 +512,15 @@ export function UnionManagement() {
                   <TableCell>
                     <div className="flex items-center space-x-2">
                       <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleRegisterMember(union)}
+                        title="Register member"
+                      >
+                        <UserPlus className="h-4 w-4 mr-1" />
+                        Member
+                      </Button>
+                      <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleEdit(union)}
@@ -531,6 +540,13 @@ export function UnionManagement() {
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            page={page}
+            pagination={pagination}
+            onPageChange={setPage}
+            loading={loading}
+            itemLabel="unions"
+          />
         </CardContent>
       </Card>
 
@@ -580,13 +596,9 @@ export function UnionManagement() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-memberCount">Member Count</Label>
-              <Input
-                id="edit-memberCount"
-                type="number"
-                value={formData.memberCount}
-                onChange={(e) => setFormData({ ...formData, memberCount: parseInt(e.target.value) || 0 })}
-              />
+              <p className="text-sm text-muted-foreground">
+                Members: {editingUnion?.memberCount?.toLocaleString() ?? 0} — use Register member on the table to add.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-contactPerson">Contact Person</Label>

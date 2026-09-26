@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -41,12 +41,14 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { notify } from './utils/notify';
 import { cn } from './ui/utils';
+import { GHANA_REGIONS } from './constants/ghanaRegions';
+import { DISTRICTS_BY_REGION } from './constants/ghanaDistricts';
+import { suggestNextStationCode } from './utils/stationCode';
+import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
+import { TablePagination } from './shared/TablePagination';
 
 export function StationManagement() {
   const { user } = useAuth();
-  const [stations, setStations] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [managers, setManagers] = useState<any[]>([]);
   const [openManagerCombobox, setOpenManagerCombobox] = useState(false);
   const [unions, setUnions] = useState<any[]>([]);
@@ -63,40 +65,32 @@ export function StationManagement() {
   const [stationToDelete, setStationToDelete] = useState<any>(null);
   const [editingStation, setEditingStation] = useState<any>(null);
 
-  // Fetch stations from backend
-  const fetchStations = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await stationApi.getAll({
+  const fetchStationsPage = useCallback(
+    (page: number, limit: number) =>
+      stationApi.getAll({
+        page,
+        limit,
         region: regionFilter !== 'all' ? regionFilter : undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
-        search: searchTerm || undefined
-      });
-      
-      if (response.success && response.data) {
-        const stationsData = response.data.stations || response.data;
-        setStations(Array.isArray(stationsData) ? stationsData : []);
-      } else {
-        console.error('Fetch stations error:', response);
-        setError(
-          typeof response.error === 'string'
-            ? response.error
-            : (response.error as { message?: string })?.message || 'Failed to load stations'
-        );
-      }
-    } catch (err) {
-      console.error('Fetch stations exception:', err);
-      setError(err instanceof Error ? err.message : 'Failed to connect to server');
-    } finally {
-      setLoading(false);
-    }
-  };
+        search: searchTerm.trim() || undefined,
+      }),
+    [regionFilter, statusFilter, searchTerm]
+  );
 
-  // Load stations on component mount
-  useEffect(() => {
-    fetchStations();
-  }, []);
+  const {
+    items: stations,
+    loading,
+    error,
+    refresh,
+    page,
+    setPage,
+    pagination,
+  } = usePaginatedEntityList<any>({
+    fetchFn: fetchStationsPage,
+    entityKey: 'stations',
+    errorMessage: 'Failed to load stations',
+    resetPageDeps: [searchTerm, statusFilter, regionFilter],
+  });
 
   const fetchManagers = async () => {
     try {
@@ -150,13 +144,6 @@ export function StationManagement() {
     void fetchUnions().finally(() => setFormOptionsLoading(false));
   };
 
-  // Refetch when filters change
-  useEffect(() => {
-    if (!loading) {
-      fetchStations();
-    }
-  }, [statusFilter, regionFilter]);
-
   const [stationForm, setStationForm] = useState({
     name: '',
     code: '',
@@ -176,20 +163,6 @@ export function StationManagement() {
   const userStations = isAdmin 
     ? stations 
     : stations.filter(s => s.id === user?.stationId);
-
-  // Apply search and filters
-  const filteredStations = userStations.filter(station => {
-    const matchesSearch = searchTerm === '' || 
-      station.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      station.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      station.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      station.managerName?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'all' || station.status === statusFilter;
-    const matchesRegion = regionFilter === 'all' || station.region === regionFilter;
-    
-    return matchesSearch && matchesStatus && matchesRegion;
-  });
 
   const getStatusBadge = (status: string) => {
     const configs = {
@@ -224,6 +197,15 @@ export function StationManagement() {
     });
   };
 
+  useEffect(() => {
+    if (!showAddDialog) return;
+    const codes = stations.map((s) => String(s.code ?? ''));
+    setStationForm((prev) => ({
+      ...prev,
+      code: prev.code || suggestNextStationCode(codes),
+    }));
+  }, [showAddDialog, stations]);
+
   const handleAddStation = async () => {
     if (
       !stationForm.name ||
@@ -231,35 +213,35 @@ export function StationManagement() {
       !stationForm.address ||
       !stationForm.city ||
       !stationForm.region ||
-      !stationForm.district ||
-      !stationForm.phone
+      !stationForm.district
     ) {
       notify.error(
-        'Please fill in all required fields (name, code, address, city, region, district, phone)'
+        'Please fill in name, address, city, region, and district'
       );
+      return;
+    }
+
+    if (!/^[0-9]{1,6}$/.test(stationForm.code)) {
+      notify.error('Station code must be numeric, up to 6 digits');
       return;
     }
 
     try {
       const stationData = {
         name: stationForm.name,
-        code: stationForm.code.toUpperCase(),
+        code: stationForm.code,
         address: stationForm.address,
         city: stationForm.city,
         region: stationForm.region,
         district: stationForm.district,
-        phone: stationForm.phone,
-        email: stationForm.email || undefined,
         unionId: parseRiseNumericId(stationForm.union),
-        // Not shown in UI; satisfies API/DB until backend optional-capacity build is deployed
-        capacity: 1,
       };
 
       const response = await stationApi.create(stationData);
 
       if (response.success) {
         notify.success(response.message || 'Station added successfully');
-        await fetchStations();
+        await refresh();
         resetForm();
         setShowAddDialog(false);
       } else {
@@ -308,7 +290,7 @@ export function StationManagement() {
 
       if (response.success) {
         notify.success(response.message || 'Station updated successfully');
-        await fetchStations();
+        await refresh();
         resetForm();
         setShowEditDialog(false);
         setEditingStation(null);
@@ -363,7 +345,7 @@ export function StationManagement() {
 
       if (response.success) {
         notify.success(response.message || 'Station deleted successfully');
-        await fetchStations();
+        await refresh();
         setShowDeleteDialog(false);
         setStationToDelete(null);
       } else {
@@ -388,8 +370,6 @@ export function StationManagement() {
     setShowDeleteDialog(true);
   };
 
-  const uniqueRegions = [...new Set(stations.map(s => s.region).filter(Boolean))];
-
   // Loading state
   if (loading) {
     return (
@@ -408,7 +388,7 @@ export function StationManagement() {
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <p className="text-red-600 mb-4">{error}</p>
-          <Button onClick={fetchStations}>Retry</Button>
+          <Button onClick={() => void refresh({ toastOnError: true })}>Retry</Button>
         </div>
       </div>
     );
@@ -439,7 +419,7 @@ export function StationManagement() {
         <Card>
           <CardContent className="p-6 text-center">
             <Building className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
-            <p className="text-2xl font-bold">{userStations.length}</p>
+            <p className="text-2xl font-bold">{pagination?.totalItems ?? userStations.length}</p>
             <p className="text-sm text-gray-600">Total Stations</p>
           </CardContent>
         </Card>
@@ -509,7 +489,7 @@ export function StationManagement() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Regions</SelectItem>
-                    {uniqueRegions.map((region) => (
+                    {GHANA_REGIONS.map((region) => (
                       <SelectItem key={region} value={region}>
                         {region}
                       </SelectItem>
@@ -525,7 +505,9 @@ export function StationManagement() {
       {/* Stations Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Station Registry ({filteredStations.length} stations)</CardTitle>
+          <CardTitle>
+            Station Registry ({pagination?.totalItems ?? userStations.length} stations)
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
@@ -542,7 +524,7 @@ export function StationManagement() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredStations.map((station) => (
+              {userStations.map((station) => (
                 <TableRow key={station.id}>
                   <TableCell>
                     <div>
@@ -615,12 +597,19 @@ export function StationManagement() {
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            page={page}
+            pagination={pagination}
+            onPageChange={setPage}
+            loading={loading}
+            itemLabel="stations"
+          />
         </CardContent>
       </Card>
 
       {/* Add Station Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add New Station</DialogTitle>
             <DialogDescription>
@@ -643,19 +632,22 @@ export function StationManagement() {
                 <Input
                   id="code"
                   value={stationForm.code}
-                  onChange={(e) => setStationForm({...stationForm, code: e.target.value})}
-                  placeholder="e.g., ACC"
+                  readOnly
+                  className="bg-muted/50 font-mono"
+                  placeholder="Auto-generated (6 digits max)"
                 />
+                <p className="text-xs text-muted-foreground">Assigned automatically when you open this form.</p>
               </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="address">Address *</Label>
-              <Input
+              <Textarea
                 id="address"
                 value={stationForm.address}
                 onChange={(e) => setStationForm({...stationForm, address: e.target.value})}
-                placeholder="Complete station address"
+                placeholder="Complete station address (any format)"
+                rows={2}
               />
             </div>
 
@@ -671,21 +663,21 @@ export function StationManagement() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="region">Region *</Label>
-                <Select value={stationForm.region} onValueChange={(value) => setStationForm({...stationForm, region: value})}>
+                <Select
+                  value={stationForm.region}
+                  onValueChange={(value) =>
+                    setStationForm({ ...stationForm, region: value, district: '' })
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select region" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Greater Accra">Greater Accra</SelectItem>
-                    <SelectItem value="Ashanti">Ashanti</SelectItem>
-                    <SelectItem value="Western">Western</SelectItem>
-                    <SelectItem value="Eastern">Eastern</SelectItem>
-                    <SelectItem value="Volta">Volta</SelectItem>
-                    <SelectItem value="Northern">Northern</SelectItem>
-                    <SelectItem value="Upper East">Upper East</SelectItem>
-                    <SelectItem value="Upper West">Upper West</SelectItem>
-                    <SelectItem value="Central">Central</SelectItem>
-                    <SelectItem value="Brong Ahafo">Brong Ahafo</SelectItem>
+                    {GHANA_REGIONS.map((region) => (
+                      <SelectItem key={region} value={region}>
+                        {region}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -693,35 +685,36 @@ export function StationManagement() {
 
             <div className="space-y-2">
               <Label htmlFor="district">District *</Label>
+              <Select
+                value={stationForm.district || undefined}
+                onValueChange={(value) => setStationForm({ ...stationForm, district: value })}
+                disabled={!stationForm.region}
+              >
+                <SelectTrigger id="district">
+                  <SelectValue placeholder={stationForm.region ? 'Select district' : 'Select region first'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(DISTRICTS_BY_REGION[stationForm.region] ?? []).map((district) => (
+                    <SelectItem key={district} value={district}>
+                      {district}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Input
-                id="district"
+                className="mt-2"
                 value={stationForm.district}
-                onChange={(e) => setStationForm({...stationForm, district: e.target.value})}
-                placeholder="e.g., Accra Metropolitan"
+                onChange={(e) => setStationForm({ ...stationForm, district: e.target.value })}
+                placeholder="Or type district if not listed"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number *</Label>
-                <Input
-                  id="phone"
-                  value={stationForm.phone}
-                  onChange={(e) => setStationForm({...stationForm, phone: e.target.value})}
-                  placeholder="+233 XX XXX XXXX"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={stationForm.email}
-                  onChange={(e) => setStationForm({...stationForm, email: e.target.value})}
-                  placeholder="station@rise.com"
-                />
-              </div>
-            </div>
+            <p className="text-xs text-muted-foreground rounded-md border bg-muted/30 p-3">
+              <strong>Station capacity</strong> (shown on some station records) is an optional
+              terminal throughput figure — not vehicle seat count. Seat capacity is set per vehicle
+              in Vehicle Management. Assign a <strong>station manager</strong> in User Management
+              (role station_manager + station), not in this form.
+            </p>
 
             <div className="space-y-2">
                 <Label htmlFor="union">Transport Union</Label>
@@ -794,7 +787,7 @@ export function StationManagement() {
 
       {/* Edit Station Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Station</DialogTitle>
             <DialogDescription>
@@ -1023,7 +1016,7 @@ export function StationManagement() {
 
       {/* View Station Dialog */}
       <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Station Details</DialogTitle>
             <DialogDescription>

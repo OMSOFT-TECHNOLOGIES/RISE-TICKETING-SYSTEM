@@ -5,12 +5,15 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
+import type { ListPagination } from '../../utils/api/client';
 import type { Transaction } from '../types';
+import { TablePagination } from '../../shared/TablePagination';
 import { EXPENSE_CATEGORIES, REVENUE_CATEGORIES } from '../constants';
 import { formatCurrency, getStatusBadge } from '../utils';
 
 interface TransactionsSectionProps {
   transactions: Transaction[];
+  totalMatching?: number;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   filterStatus: string;
@@ -21,10 +24,14 @@ interface TransactionsSectionProps {
   canEdit: (transaction: Transaction, userId?: string, isSuperAdmin?: boolean) => boolean;
   userId?: string;
   isSuperAdmin?: boolean;
+  page?: number;
+  pagination?: ListPagination | null;
+  onPageChange?: (page: number) => void;
 }
 
 export function TransactionsSection({
   transactions,
+  totalMatching,
   searchQuery,
   setSearchQuery,
   filterStatus,
@@ -35,7 +42,11 @@ export function TransactionsSection({
   canEdit,
   userId,
   isSuperAdmin,
+  page = 1,
+  pagination = null,
+  onPageChange,
 }: TransactionsSectionProps) {
+  const matchCount = totalMatching ?? transactions.length;
   return (
     <div className="space-y-4">
       <div className="flex flex-col lg:flex-row gap-4 lg:items-end">
@@ -92,7 +103,7 @@ export function TransactionsSection({
               Transaction Registry
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {transactions.length} record{transactions.length !== 1 ? 's' : ''} matching filters
+              {matchCount} record{matchCount !== 1 ? 's' : ''} matching filters
             </p>
           </div>
         </div>
@@ -172,6 +183,15 @@ export function TransactionsSection({
             )}
           </TableBody>
         </Table>
+        {onPageChange ? (
+          <TablePagination
+            page={page}
+            pagination={pagination}
+            onPageChange={onPageChange}
+            itemLabel="transactions"
+            className="px-5"
+          />
+        ) : null}
       </div>
     </div>
   );

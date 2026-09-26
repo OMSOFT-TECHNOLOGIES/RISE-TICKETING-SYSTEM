@@ -8,7 +8,7 @@ import type {
   IncidentType,
   TimeOfDay,
 } from './types';
-import { GHANA_BOUNDS } from './constants';
+import { GHANA_BOUNDS, STATUS_OPTIONS } from './constants';
 
 export function calculateStats(incidents: Incident[]): IncidentStats {
   return {
@@ -62,7 +62,9 @@ export function formatRelativeTime(dateString: string): string {
 }
 
 export function getStatusLabel(status: string): string {
-  return status.charAt(0).toUpperCase() + status.slice(1);
+  const match = STATUS_OPTIONS.find((s) => s.value === status);
+  if (match) return match.label;
+  return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function getStatusStyles(status: string): { dot: string; text: string; bg: string } {
@@ -75,6 +77,8 @@ export function getStatusStyles(status: string): { dot: string; text: string; bg
       return { dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200/60' };
     case 'closed':
       return { dot: 'bg-slate-400', text: 'text-slate-600', bg: 'bg-slate-50 border-slate-200/60' };
+    case 'couldnt_fix':
+      return { dot: 'bg-orange-500', text: 'text-orange-800', bg: 'bg-orange-50 border-orange-200/60' };
     default:
       return { dot: 'bg-slate-400', text: 'text-slate-600', bg: 'bg-slate-50 border-slate-200/60' };
   }
@@ -113,8 +117,14 @@ export function validateNewIncident(
   form: NewIncidentForm,
   location: IncidentCoordinates | null
 ): string | null {
-  if (!form.title || !form.description || !form.type || !form.severity) {
-    return 'Please fill in all required fields';
+  if (!form.title || !form.description || !form.type || !form.severity || !form.region) {
+    return 'Please fill in all required fields (including region)';
+  }
+  if (form.vehicleMode === 'public' && !form.registeredVehicleId) {
+    return 'Select a registered public vehicle or switch to Other vehicle';
+  }
+  if (form.vehicleMode === 'other' && !form.vehicleRegNumber.trim()) {
+    return 'Enter the other vehicle registration number';
   }
   if (!location) {
     return 'Please select a location on the map';
@@ -159,6 +169,78 @@ export function buildIncidentFromForm(
 
 export function formatTypeLabel(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+export function incidentFormFromIncident(incident: Incident): NewIncidentForm {
+  const hasFleetVehicle = Boolean(incident.registeredVehicleId);
+  const vehicleMode: NewIncidentForm['vehicleMode'] =
+    incident.vehicleMode === 'other'
+      ? 'other'
+      : incident.vehicleMode === 'public' || hasFleetVehicle
+        ? 'public'
+        : incident.vehicleRegNumber
+          ? 'other'
+          : 'public';
+
+  return {
+    title: incident.title ?? '',
+    description: incident.description ?? '',
+    type: incident.type ?? '',
+    severity: incident.severity ?? '',
+    region: incident.region ?? '',
+    location: incident.location ?? '',
+    vehicleMode,
+    registeredVehicleId: incident.registeredVehicleId ?? '',
+    vehicleRegNumber: incident.vehicleRegNumber ?? '',
+    driverName: incident.driverName ?? '',
+    passengersInvolved:
+      incident.passengersInvolved != null ? String(incident.passengersInvolved) : '',
+    injuriesReported:
+      incident.injuriesReported != null ? String(incident.injuriesReported) : '',
+    fatalitiesReported:
+      incident.fatalitiesReported != null ? String(incident.fatalitiesReported) : '',
+    contactNumber: incident.contactNumber ?? '',
+    contactEmail: incident.contactEmail ?? '',
+    weatherConditions: incident.weatherConditions ?? '',
+    roadConditions: incident.roadConditions ?? '',
+    timeOfDay: incident.timeOfDay ?? '',
+    emergencyServices: incident.emergencyServices ?? [],
+    reportSource: incident.reportSource ?? 'internal',
+  };
+}
+
+export function buildIncidentUpdatePayload(
+  form: NewIncidentForm,
+  location: IncidentCoordinates | null,
+  district?: string
+): Record<string, unknown> {
+  return {
+    title: form.title,
+    description: form.description,
+    type: form.type,
+    severity: form.severity,
+    region: form.region,
+    district,
+    location: form.location,
+    coordinates: location,
+    vehicleMode: form.vehicleMode,
+    registeredVehicleId:
+      form.vehicleMode === 'public' ? form.registeredVehicleId || null : null,
+    vehicleRegNumber: form.vehicleRegNumber || null,
+    driverName: form.driverName || null,
+    passengersInvolved: form.passengersInvolved
+      ? parseInt(form.passengersInvolved, 10)
+      : null,
+    injuriesReported: form.injuriesReported ? parseInt(form.injuriesReported, 10) : 0,
+    fatalitiesReported: form.fatalitiesReported
+      ? parseInt(form.fatalitiesReported, 10)
+      : 0,
+    contactNumber: form.contactNumber || null,
+    contactEmail: form.contactEmail || null,
+    weatherConditions: form.weatherConditions || null,
+    roadConditions: form.roadConditions || null,
+    timeOfDay: form.timeOfDay || null,
+  };
 }
 
 /** @deprecated use getStatusStyles */

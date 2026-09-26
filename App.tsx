@@ -4,13 +4,14 @@ import { NotificationProvider, SystemAlerts } from './components/NotificationSys
 import { LoginPage } from './components/LoginPage';
 import { ResetPassword } from './components/ResetPassword';
 import { ETicketPage } from './components/ETicketPage';
+import { DriverReportPage } from './components/DriverReportPage';
 import { Navigation } from './components/Navigation';
 import { Header } from './components/Header';
 import { SidebarProvider, SidebarInset } from './components/ui/sidebar';
 import { ThemeProvider } from './components/ThemeProvider';
 import { Toaster } from './components/ui/sonner';
 import ErrorBoundary from './components/ErrorBoundary';
-import { Shield, AlertTriangle } from 'lucide-react';
+import { Shield, AlertTriangle, Loader2 } from 'lucide-react';
 import { DEFAULT_PAGE, isSafetyIncidentPage, isStationWorkerPage } from './components/config/pages';
 import { renderPage } from './components/utils/pageRouter';
 import { checkPageAccess, getAccessLevelInfo } from './components/utils/accessControl';
@@ -26,7 +27,7 @@ function resolveSavedPage(saved: string): { page: string; action: PageActionId |
 }
 
 function AppContent() {
-  const { isAuthenticated, user, hasPermission, isSuperAdmin, isAdmin } = useAuth();
+  const { isAuthenticated, authReady, user, hasPermission, isSuperAdmin, isAdmin } = useAuth();
   const [initialPageState] = useState(() => {
     const saved = localStorage.getItem('rise-current-page') || DEFAULT_PAGE;
     return resolveSavedPage(saved);
@@ -37,6 +38,7 @@ function AppContent() {
   // Check for reset password token in URL
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [eTicketToken, setETicketToken] = useState<string | null>(null);
+  const [driverReportToken, setDriverReportToken] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if we're on the reset password route
@@ -51,6 +53,11 @@ function AppContent() {
     const eTicketMatch = window.location.pathname.match(/^\/e-ticket\/([^/]+)$/);
     if (eTicketMatch) {
       setETicketToken(eTicketMatch[1]);
+      return;
+    }
+    const reportMatch = window.location.pathname.match(/^\/report-driver\/([^/]+)$/);
+    if (reportMatch) {
+      setDriverReportToken(reportMatch[1]);
     }
   }, []);
 
@@ -86,6 +93,21 @@ function AppContent() {
   // Public e-ticket page (no login required)
   if (eTicketToken) {
     return <ETicketPage token={eTicketToken} />;
+  }
+
+  if (driverReportToken) {
+    return <DriverReportPage token={driverReportToken} />;
+  }
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-[#193cb8]" />
+          <p className="text-sm text-muted-foreground">Checking your session…</p>
+        </div>
+      </div>
+    );
   }
 
   if (!isAuthenticated) {

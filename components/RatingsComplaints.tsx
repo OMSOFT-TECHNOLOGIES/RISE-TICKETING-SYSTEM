@@ -6,7 +6,7 @@ import { useAuth } from './AuthContext';
 import { AccessRestricted } from './AccessRestricted';
 import { notify } from './utils/notify';
 import { feedbackApi } from './utils/api';
-import { useEntityList } from './shared/hooks/useEntityList';
+import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
 import { FEEDBACK_TAB_TRIGGER_CLASS } from './RatingsComplaints/constants';
 import type {
   Complaint,
@@ -19,8 +19,6 @@ import {
   buildRatingDistribution,
   buildRatingTrends,
   calculateStats,
-  filterComplaints,
-  filterRatings,
   mapApiComplaintCategories,
   mapApiRatingDistribution,
   mapApiRatingTrends,
@@ -37,17 +35,37 @@ import { ComplaintDetailSheet } from './RatingsComplaints/components/ComplaintDe
 export function RatingsComplaints() {
   const { user } = useAuth();
 
-  const fetchRatings = useCallback(
-    () => feedbackApi.getRatings({ limit: 500, stationId: user?.stationId }),
-    [user?.stationId]
-  );
-  const fetchComplaints = useCallback(
-    () =>
-      feedbackApi.getComplaints({
-        limit: 500,
+  const [ratingFilters, setRatingFilters] = useState<RatingFilters>({ search: '' });
+  const [complaintFilters, setComplaintFilters] = useState<ComplaintFilters>({
+    search: '',
+    status: 'all',
+    priority: 'all',
+    category: 'all',
+  });
+
+  const fetchRatingsPage = useCallback(
+    (page: number, limit: number) =>
+      feedbackApi.getRatings({
+        page,
+        limit,
         stationId: user?.stationId,
+        search: ratingFilters.search.trim() || undefined,
       }),
-    [user?.stationId]
+    [user?.stationId, ratingFilters.search]
+  );
+
+  const fetchComplaintsPage = useCallback(
+    (page: number, limit: number) =>
+      feedbackApi.getComplaints({
+        page,
+        limit,
+        stationId: user?.stationId,
+        search: complaintFilters.search.trim() || undefined,
+        status: complaintFilters.status,
+        priority: complaintFilters.priority,
+        category: complaintFilters.category,
+      }),
+    [user?.stationId, complaintFilters]
   );
 
   const [apiStats, setApiStats] = useState<Record<string, unknown> | null>(null);
@@ -87,10 +105,14 @@ export function RatingsComplaints() {
     loading: ratingsLoading,
     error: ratingsError,
     refresh: refreshRatings,
-  } = useEntityList<Rating>({
-    fetchFn: fetchRatings,
+    page: ratingsPage,
+    setPage: setRatingsPage,
+    pagination: ratingsPagination,
+  } = usePaginatedEntityList<Rating>({
+    fetchFn: fetchRatingsPage,
     entityKey: 'ratings',
     errorMessage: 'Failed to load ratings',
+    resetPageDeps: [ratingFilters.search],
   });
 
   const {
@@ -100,18 +122,19 @@ export function RatingsComplaints() {
     refresh: refreshComplaints,
     isSubmitting,
     setIsSubmitting,
-  } = useEntityList<Complaint>({
-    fetchFn: fetchComplaints,
+    page: complaintsPage,
+    setPage: setComplaintsPage,
+    pagination: complaintsPagination,
+  } = usePaginatedEntityList<Complaint>({
+    fetchFn: fetchComplaintsPage,
     entityKey: 'complaints',
     errorMessage: 'Failed to load complaints',
-  });
-
-  const [ratingFilters, setRatingFilters] = useState<RatingFilters>({ search: '' });
-  const [complaintFilters, setComplaintFilters] = useState<ComplaintFilters>({
-    search: '',
-    status: 'all',
-    priority: 'all',
-    category: 'all',
+    resetPageDeps: [
+      complaintFilters.search,
+      complaintFilters.status,
+      complaintFilters.priority,
+      complaintFilters.category,
+    ],
   });
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -146,16 +169,6 @@ export function RatingsComplaints() {
       (point) => point.totalRatings > 0
     );
   }, [ratings, apiRatingTrends]);
-
-  const filteredRatings = useMemo(
-    () => filterRatings(ratings, ratingFilters),
-    [ratings, ratingFilters]
-  );
-
-  const filteredComplaints = useMemo(
-    () => filterComplaints(complaints, complaintFilters),
-    [complaints, complaintFilters]
-  );
 
   const handleViewComplaint = (complaint: Complaint) => {
     setSelectedComplaint(complaint);
@@ -276,24 +289,32 @@ export function RatingsComplaints() {
 
                 <TabsContent value="ratings" className="mt-0">
                   <RatingsTab
-                    ratings={filteredRatings}
+                    ratings={ratings}
                     filters={ratingFilters}
                     onFiltersChange={(updates) =>
                       setRatingFilters((prev) => ({ ...prev, ...updates }))
                     }
                     onExport={() => exportData('ratings')}
+                    page={ratingsPage}
+                    pagination={ratingsPagination}
+                    onPageChange={setRatingsPage}
+                    loading={ratingsLoading}
                   />
                 </TabsContent>
 
                 <TabsContent value="complaints" className="mt-0">
                   <ComplaintsTab
-                    complaints={filteredComplaints}
+                    complaints={complaints}
                     filters={complaintFilters}
                     onFiltersChange={(updates) =>
                       setComplaintFilters((prev) => ({ ...prev, ...updates }))
                     }
                     onViewComplaint={handleViewComplaint}
                     onExport={() => exportData('complaints')}
+                    page={complaintsPage}
+                    pagination={complaintsPagination}
+                    onPageChange={setComplaintsPage}
+                    loading={complaintsLoading}
                   />
                 </TabsContent>
 

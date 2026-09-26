@@ -4,6 +4,7 @@ import type { ApiResponse } from './types';
 export const tripApi = {
   getAll: async (params?: {
     stationId?: string;
+    driverId?: string;
     status?: string;
     date?: string;
     search?: string;
@@ -12,6 +13,7 @@ export const tripApi = {
   }): Promise<ApiResponse> => {
     const queryParams = new URLSearchParams();
     if (params?.stationId) queryParams.append('stationId', params.stationId);
+    if (params?.driverId) queryParams.append('driverId', params.driverId);
     if (params?.status && params.status !== 'all') {
       queryParams.append('status', params.status);
     }
@@ -44,10 +46,14 @@ export const tripApi = {
     });
   },
 
-  updateStatus: async (id: string, status: string): Promise<ApiResponse> => {
+  updateStatus: async (
+    id: string,
+    status: string,
+    statusReason?: string
+  ): Promise<ApiResponse> => {
     return apiRequest(`/api/trips/${id}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, statusReason }),
     });
   },
 
@@ -73,6 +79,17 @@ export const tripApi = {
     const queryString = queryParams.toString();
     return apiRequest(`/api/trips/statistics${queryString ? `?${queryString}` : ''}`, {
       method: 'GET',
+    });
+  },
+
+  getCommissionTiers: async (): Promise<ApiResponse> => {
+    return apiRequest('/api/trip-tiers', { method: 'GET' });
+  },
+
+  updateCommissionTiers: async (payload: unknown): Promise<ApiResponse> => {
+    return apiRequest('/api/trip-tiers', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
     });
   },
 

@@ -3,11 +3,13 @@ import {
   Car,
   Clock,
   MapPin,
+  Pencil,
   Phone,
   Shield,
   User,
   Users,
 } from 'lucide-react';
+import { Button } from '../../ui/button';
 import {
   Sheet,
   SheetContent,
@@ -16,18 +18,27 @@ import {
   SheetTitle,
 } from '../../ui/sheet';
 import { Separator } from '../../ui/separator';
-import { ScrollArea } from '../../ui/scroll-area';
 import { Badge } from '../../ui/badge';
 import type { Incident } from '../types';
 import { formatIncidentDate, formatTypeLabel } from '../utils';
 import { GhanaMapCanvas } from './GhanaMapCanvas';
 import { SeverityIndicator } from './SeverityIndicator';
 import { StatusBadge } from './StatusBadge';
+import { IncidentCaseActions } from './IncidentCaseActions';
+import { IncidentEvidenceGallery } from './IncidentEvidenceGallery';
+import { CONFIRMATION_AGENCY_OPTIONS } from '../constants';
 
 interface IncidentDetailSheetProps {
   incident: Incident | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  canManage?: boolean;
+  onStatusChange?: (status: string) => Promise<void>;
+  onConfirmPublicReport?: (payload: {
+    confirmationStatus: 'confirmed' | 'rejected';
+    confirmedByAgency: string;
+  }) => Promise<void>;
+  onEdit?: () => void;
 }
 
 function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -49,12 +60,25 @@ function DetailField({ label, value }: { label: string; value?: React.ReactNode 
   );
 }
 
-export function IncidentDetailSheet({ incident, open, onOpenChange }: IncidentDetailSheetProps) {
+function agencyLabel(value?: string): string {
+  if (!value) return '';
+  return CONFIRMATION_AGENCY_OPTIONS.find((a) => a.value === value)?.label ?? value;
+}
+
+export function IncidentDetailSheet({
+  incident,
+  open,
+  onOpenChange,
+  canManage = false,
+  onStatusChange,
+  onConfirmPublicReport,
+  onEdit,
+}: IncidentDetailSheetProps) {
   if (!incident) return null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-xl p-0 flex flex-col gap-0">
+      <SheetContent className="w-full sm:max-w-xl p-0 flex flex-col gap-0 h-full max-h-[100dvh] overflow-hidden">
         <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <div className="flex items-center gap-2 pr-8">
             <span className="font-mono text-xs text-muted-foreground">{incident.id}</span>
@@ -65,19 +89,56 @@ export function IncidentDetailSheet({ incident, open, onOpenChange }: IncidentDe
             <StatusBadge status={incident.status} />
             <SeverityIndicator severity={incident.severity} />
             <Badge variant="outline" className="font-normal">{formatTypeLabel(incident.type)}</Badge>
+            {canManage && onEdit ? (
+              <Button type="button" variant="outline" size="sm" className="ml-auto" onClick={onEdit}>
+                <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                Edit
+              </Button>
+            ) : null}
           </div>
         </SheetHeader>
 
-        <ScrollArea className="flex-1">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
           <div className="px-6 py-5 space-y-6">
             <DetailSection title="Overview">
               <div className="grid grid-cols-2 gap-4">
-                <DetailField label="Region" value={`${incident.region}, ${incident.district}`} />
+                <DetailField label="Region" value={`${incident.region}${incident.district ? `, ${incident.district}` : ''}`} />
                 <DetailField label="Reported" value={formatIncidentDate(incident.reportedAt)} />
                 <DetailField label="Reporter" value={incident.reportedBy} />
                 <DetailField label="Last Updated" value={formatIncidentDate(incident.updatedAt)} />
+                {incident.reportSource === 'public' && (
+                  <DetailField
+                    label="Public report"
+                    value={
+                      incident.confirmationStatus === 'pending'
+                        ? 'Awaiting agency verification'
+                        : `${incident.confirmationStatus ?? '—'}${incident.confirmedByAgency ? ` (${agencyLabel(incident.confirmedByAgency)})` : ''}`
+                    }
+                  />
+                )}
               </div>
             </DetailSection>
+
+            <Separator />
+
+            <DetailSection title="Photos & videos">
+              <IncidentEvidenceGallery
+                incidentId={incident.id}
+                files={incident.evidenceFiles ?? []}
+              />
+            </DetailSection>
+
+            {canManage && onStatusChange && onConfirmPublicReport && (
+              <>
+                <Separator />
+                <IncidentCaseActions
+                  incident={incident}
+                  canManage={canManage}
+                  onStatusChange={onStatusChange}
+                  onConfirmPublicReport={onConfirmPublicReport}
+                />
+              </>
+            )}
 
             <Separator />
 
@@ -216,7 +277,7 @@ export function IncidentDetailSheet({ incident, open, onOpenChange }: IncidentDe
               <span>Priority: {incident.priority}</span>
             </div>
           </div>
-        </ScrollArea>
+        </div>
       </SheetContent>
     </Sheet>
   );

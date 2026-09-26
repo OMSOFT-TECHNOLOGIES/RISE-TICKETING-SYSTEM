@@ -37,8 +37,8 @@ export function AccountDialogs({
   return (
     <>
       <Dialog open={showAddTransactionDialog} onOpenChange={setShowAddTransactionDialog}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0 gap-0">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+        <DialogContent className="flex max-w-lg flex-col gap-0 p-0">
+          <DialogHeader>
             <div className="flex items-start gap-3">
               <div className="rounded-lg bg-[#193cb8]/10 border border-[#193cb8]/20 p-2.5 shrink-0">
                 <DollarSign className="h-5 w-5 text-[#193cb8]" />
@@ -52,7 +52,7 @@ export function AccountDialogs({
             </div>
           </DialogHeader>
 
-          <div className="px-6 py-5 space-y-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-5">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Transaction Type</Label>
@@ -145,7 +145,7 @@ export function AccountDialogs({
             )}
           </div>
 
-          <div className="flex justify-end gap-2 px-6 py-4 border-t bg-muted/10">
+          <div className="flex shrink-0 justify-end gap-2 border-t bg-muted/10 px-6 py-4">
             <Button variant="outline" onClick={() => setShowAddTransactionDialog(false)}>
               Cancel
             </Button>
@@ -157,8 +157,8 @@ export function AccountDialogs({
       </Dialog>
 
       <Dialog open={showAddRevenueSourceDialog} onOpenChange={setShowAddRevenueSourceDialog}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0 gap-0">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+        <DialogContent className="flex max-w-lg flex-col gap-0 p-0">
+          <DialogHeader>
             <div className="flex items-start gap-3">
               <div className="rounded-lg bg-emerald-50 border border-emerald-200/60 p-2.5 shrink-0">
                 <PlusCircle className="h-5 w-5 text-emerald-600" />
@@ -172,7 +172,7 @@ export function AccountDialogs({
             </div>
           </DialogHeader>
 
-          <div className="px-6 py-5 space-y-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-5">
             <div className="space-y-2">
               <Label>Source Type *</Label>
               <Select
@@ -260,7 +260,7 @@ export function AccountDialogs({
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 px-6 py-4 border-t bg-muted/10">
+          <div className="flex shrink-0 justify-end gap-2 border-t bg-muted/10 px-6 py-4">
             <Button variant="outline" onClick={() => setShowAddRevenueSourceDialog(false)}>
               Cancel
             </Button>

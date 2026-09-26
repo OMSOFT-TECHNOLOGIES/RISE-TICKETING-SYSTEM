@@ -1,10 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { useAuth } from './AuthContext';
-import { vehicleApi, driverApi, parseListResponse } from './utils/api';
+import { vehicleApi, driverApi, parseListResponse, formatApiError } from './utils/api';
+import { StationFormSelect } from './shared/StationFormSelect';
+import { isGlobalDataScope } from './utils/stationScope';
+import { formatStationRefId } from './utils/stationPicker';
 import { listParamsForDataEntry } from './utils/stationScope';
 import { useDataEntryStation } from './shared/hooks/useDataEntryStation';
 import { DataEntryStationBanner } from './shared/DataEntryStationBanner';
@@ -28,18 +31,57 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { MoreHorizontal, Trash2, UserCheck } from 'lucide-react';
 import { usePageAction } from './context/PageActionContext';
+import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
+import { TablePagination } from './shared/TablePagination';
 
 const vehicleMakes = ['Hyundai', 'Tata', 'Mercedes', 'Isuzu', 'Toyota', 'Ford', 'Volkswagen'];
 const fuelTypes = ['Diesel', 'Petrol', 'CNG', 'Electric'];
+
+function parseOptionalMileage(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0) return undefined;
+  return Math.floor(parsed);
+}
+
+function formatMileage(value: unknown): string {
+  if (value == null || value === '') return 'Not recorded';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'Not recorded';
+  return `${n.toLocaleString()} km`;
+}
 
 export function VehicleManagement() {
   const { user } = useAuth();
   const { pendingAction, clearAction } = usePageAction();
   const dataEntry = useDataEntryStation();
-  const [vehicles, setVehicles] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchVehiclesPage = useCallback(
+    (page: number, limit: number) =>
+      vehicleApi.getAll(
+        listParamsForDataEntry(user, dataEntry.effectiveStationId, { page, limit })
+      ),
+    [user, dataEntry.effectiveStationId]
+  );
+
+  const {
+    items: vehicles,
+    loading,
+    refresh,
+    isSubmitting,
+    setIsSubmitting,
+    page,
+    setPage,
+    pagination,
+  } = usePaginatedEntityList<any>({
+    fetchFn: fetchVehiclesPage,
+    entityKey: 'vehicles',
+    errorMessage: 'Failed to load vehicles',
+  });
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [registerStationId, setRegisterStationId] = useState('');
+  const isGlobalUser = isGlobalDataScope(user?.role);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -58,7 +100,6 @@ export function VehicleManagement() {
     capacity: '',
     fuelType: '',
     mileage: '',
-    driver: ''
   });
   const [editVehicle, setEditVehicle] = useState({
     registrationNumber: '',
@@ -69,33 +110,10 @@ export function VehicleManagement() {
     fuelType: '',
     status: '',
     mileage: '',
-    driver: ''
   });
 
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const userVehicles = vehicles;
-
-  // Fetch vehicles from backend
-  const fetchVehicles = async () => {
-    try {
-      setLoading(true);
-      const response = await vehicleApi.getAll(
-        listParamsForDataEntry(user, dataEntry.effectiveStationId, { limit: 200 })
-      );
-      if (response.success && response.data) {
-        setVehicles(parseListResponse(response.data, 'vehicles'));
-      }
-    } catch (error: any) {
-      console.error('Error fetching vehicles:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Load vehicles on component mount
-  useEffect(() => {
-    fetchVehicles();
-  }, [user?.stationId, user?.role, dataEntry.effectiveStationId]);
 
   useEffect(() => {
     if (pendingAction === 'new-vehicle') {
@@ -104,24 +122,56 @@ export function VehicleManagement() {
     }
   }, [pendingAction, clearAction]);
 
+  useEffect(() => {
+    if (!showAddDialog) return;
+    const sid =
+      dataEntry.effectiveStationId || formatStationRefId(user?.stationId) || '';
+    setRegisterStationId(sid);
+  }, [showAddDialog, dataEntry.effectiveStationId, user?.stationId]);
+
   const handleAddVehicle = async () => {
-    const sid = dataEntry.requireStationId();
-    if (!sid) return;
+    const sid =
+      dataEntry.needsPicker || isGlobalUser
+        ? registerStationId
+        : dataEntry.effectiveStationId || formatStationRefId(user?.stationId);
+    if (!sid) {
+      notify.error('Select a station for this vehicle');
+      return;
+    }
+
+    if (
+      !newVehicle.registrationNumber.trim() ||
+      !newVehicle.make ||
+      !newVehicle.model.trim() ||
+      !newVehicle.year ||
+      !newVehicle.capacity ||
+      !newVehicle.fuelType
+    ) {
+      notify.error('Please complete registration number, make, model, year, capacity, and fuel type');
+      return;
+    }
+
+    const mileage = parseOptionalMileage(newVehicle.mileage);
+    if (newVehicle.mileage.trim() && mileage === undefined) {
+      notify.error('Enter a valid mileage or leave the field blank');
+      return;
+    }
 
     try {
       setIsSubmitting(true);
-      
-      const vehicleData = {
-        registrationNumber: newVehicle.registrationNumber,
+
+      const vehicleData: Record<string, unknown> = {
+        registrationNumber: newVehicle.registrationNumber.trim(),
         make: newVehicle.make,
-        model: newVehicle.model,
-        year: parseInt(newVehicle.year),
-        capacity: parseInt(newVehicle.capacity),
+        model: newVehicle.model.trim(),
+        year: parseInt(newVehicle.year, 10),
+        capacity: parseInt(newVehicle.capacity, 10),
         fuelType: newVehicle.fuelType,
-        mileage: parseInt(newVehicle.mileage),
-        driver: newVehicle.driver || undefined,
         stationId: sid,
       };
+      if (mileage !== undefined) {
+        vehicleData.mileage = mileage;
+      }
 
       const response = await vehicleApi.create(vehicleData);
       
@@ -135,12 +185,11 @@ export function VehicleManagement() {
           capacity: '',
           fuelType: '',
           mileage: '',
-          driver: ''
         });
         setShowAddDialog(false);
-        fetchVehicles(); // Reload vehicles list
+        void refresh(); // Reload vehicles list
       } else {
-        notify.error(response.error || 'Failed to register vehicle');
+        notify.error(formatApiError(response.error, 'Failed to register vehicle'));
       }
     } catch (error: any) {
       console.error('Error adding vehicle:', error);
@@ -200,7 +249,7 @@ export function VehicleManagement() {
       if (response.success) {
         notify.success(driverId ? 'Driver assigned successfully' : 'Driver unassigned');
         setShowAssignDriverDialog(false);
-        fetchVehicles();
+        void refresh();
       } else {
         notify.error(response.error || 'Failed to assign driver');
       }
@@ -222,35 +271,45 @@ export function VehicleManagement() {
       capacity: vehicle.capacity.toString(),
       fuelType: vehicle.fuelType,
       status: vehicle.status,
-      mileage: vehicle.mileage.toString(),
-      driver: vehicle.driverName || ''
+      mileage:
+        vehicle.mileage != null && vehicle.mileage !== ''
+          ? String(vehicle.mileage)
+          : '',
     });
     setShowEditDialog(true);
   };
 
   const handleUpdateVehicle = async () => {
     if (!selectedVehicle) return;
-    
+
+    const mileage = parseOptionalMileage(editVehicle.mileage);
+    if (editVehicle.mileage.trim() && mileage === undefined) {
+      notify.error('Enter a valid mileage or leave the field blank');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-      
-      const vehicleData = {
+
+      const vehicleData: Record<string, unknown> = {
         registrationNumber: editVehicle.registrationNumber,
         make: editVehicle.make,
         model: editVehicle.model,
-        year: parseInt(editVehicle.year),
-        capacity: parseInt(editVehicle.capacity),
+        year: parseInt(editVehicle.year, 10),
+        capacity: parseInt(editVehicle.capacity, 10),
         fuelType: editVehicle.fuelType,
         status: editVehicle.status,
-        mileage: parseInt(editVehicle.mileage)
       };
+      if (mileage !== undefined) {
+        vehicleData.mileage = mileage;
+      }
 
       const response = await vehicleApi.update(selectedVehicle.id, vehicleData);
       
       if (response.success) {
         notify.success('Vehicle updated successfully');
         setShowEditDialog(false);
-        fetchVehicles();
+        void refresh();
       } else {
         notify.error(response.error || 'Failed to update vehicle');
       }
@@ -277,7 +336,7 @@ export function VehicleManagement() {
       if (response.success) {
         notify.success('Vehicle deleted successfully');
         setShowDeleteDialog(false);
-        fetchVehicles();
+        void refresh();
       } else {
         notify.error(response.error || 'Failed to delete vehicle');
       }
@@ -328,7 +387,7 @@ export function VehicleManagement() {
           </div>
           <div>
             <p className="font-medium text-gray-700">Mileage</p>
-            <p>{vehicle.mileage.toLocaleString()} km</p>
+            <p>{formatMileage(vehicle.mileage)}</p>
           </div>
           <div>
             <p className="font-medium text-gray-700">Current Driver</p>
@@ -400,10 +459,18 @@ export function VehicleManagement() {
             <DialogHeader>
               <DialogTitle>Register New Vehicle</DialogTitle>
               <DialogDescription>
-                Register a new vehicle in the RISE transport system. All fields are required.
+                Register vehicle details now. Mileage is optional. Assign a driver later from the
+                vehicle actions menu.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              {(dataEntry.needsPicker || isGlobalUser) && (
+                <StationFormSelect
+                  value={registerStationId}
+                  stations={dataEntry.stations}
+                  onChange={setRegisterStationId}
+                />
+              )}
               <div>
                 <Label htmlFor="regNumber">Registration Number</Label>
                 <Input
@@ -473,22 +540,14 @@ export function VehicleManagement() {
                 </Select>
               </div>
               <div>
-                <Label htmlFor="driver">Driver Name (Optional)</Label>
-                <Input
-                  id="driver"
-                  value={newVehicle.driver}
-                  onChange={(e) => setNewVehicle({...newVehicle, driver: e.target.value})}
-                  placeholder="e.g., Kwame Asante"
-                />
-              </div>
-              <div>
-                <Label htmlFor="mileage">Current Mileage (km)</Label>
+                <Label htmlFor="mileage">Current Mileage (km) — optional</Label>
                 <Input
                   id="mileage"
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   value={newVehicle.mileage}
-                  onChange={(e) => setNewVehicle({...newVehicle, mileage: e.target.value})}
-                  placeholder="45000"
+                  onChange={(e) => setNewVehicle({ ...newVehicle, mileage: e.target.value })}
+                  placeholder="Leave blank if unknown"
                 />
               </div>
               <Button 
@@ -605,6 +664,13 @@ export function VehicleManagement() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination
+              page={page}
+              pagination={pagination}
+              onPageChange={setPage}
+              loading={loading}
+              itemLabel="vehicles"
+            />
           </CardContent>
         </Card>
       </div>
@@ -658,7 +724,7 @@ export function VehicleManagement() {
                 </div>
                 <div>
                   <Label className="text-gray-600">Mileage</Label>
-                  <p className="font-medium">{selectedVehicle.mileage?.toLocaleString()} km</p>
+                  <p className="font-medium">{formatMileage(selectedVehicle.mileage)}</p>
                 </div>
                 <div>
                   <Label className="text-gray-600">Current Driver</Label>
@@ -680,7 +746,7 @@ export function VehicleManagement() {
 
       {/* Edit Vehicle Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Vehicle</DialogTitle>
             <DialogDescription>
@@ -767,13 +833,14 @@ export function VehicleManagement() {
                 </Select>
               </div>
               <div>
-                <Label htmlFor="edit-mileage">Current Mileage (km)</Label>
+                <Label htmlFor="edit-mileage">Current Mileage (km) — optional</Label>
                 <Input
                   id="edit-mileage"
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   value={editVehicle.mileage}
-                  onChange={(e) => setEditVehicle({...editVehicle, mileage: e.target.value})}
-                  placeholder="45000"
+                  onChange={(e) => setEditVehicle({ ...editVehicle, mileage: e.target.value })}
+                  placeholder="Leave blank if unknown"
                 />
               </div>
             </div>

@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Plus, MapPin, AlertTriangle, Clock, CheckCircle, Eye, Wrench } from 'lucide-react';
 import type { DeathTrapReport } from './DeathTrapReporting/types';
 import { deathTrapApi } from './utils/api';
-import { useEntityList } from './shared/hooks/useEntityList';
+import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
+import { TablePagination } from './shared/TablePagination';
 import { notify } from './utils/notify';
 import {
   calculatePriorityScore,
@@ -22,7 +23,21 @@ import {
 import { ReportHazardDialog, type HazardReportForm } from './DeathTrapReporting/ReportHazardDialog';
 
 export function DeathTrapReporting() {
-  const fetchReports = useCallback(() => deathTrapApi.getAll(), []);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [severityFilter, setSeverityFilter] = useState<string>('all');
+
+  const fetchReports = useCallback(
+    (page: number, limit: number) =>
+      deathTrapApi.getAll({
+        page,
+        limit,
+        search: searchTerm.trim() || undefined,
+        type: typeFilter !== 'all' ? typeFilter : undefined,
+        severity: severityFilter !== 'all' ? severityFilter : undefined,
+      }),
+    [searchTerm, typeFilter, severityFilter]
+  );
   const {
     items: reports,
     loading,
@@ -30,18 +45,19 @@ export function DeathTrapReporting() {
     refresh,
     isSubmitting,
     setIsSubmitting,
-  } = useEntityList<DeathTrapReport>({
+    page,
+    setPage,
+    pagination,
+  } = usePaginatedEntityList<DeathTrapReport>({
     fetchFn: fetchReports,
     entityKey: 'deathTraps',
     errorMessage: 'Failed to load hazard reports',
+    resetPageDeps: [searchTerm, typeFilter, severityFilter],
   });
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<DeathTrapReport | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [isLocationFromMap, setIsLocationFromMap] = useState(false);
 
   const [formData, setFormData] = useState<HazardReportForm>(DEFAULT_HAZARD_FORM);
@@ -53,18 +69,6 @@ export function DeathTrapReporting() {
     { value: 'resolved', label: 'Resolved', color: 'green' },
     { value: 'escalated', label: 'Escalated', color: 'red' }
   ];
-
-  const filteredReports = reports.filter(report => {
-    const matchesSearch = 
-      report.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      report.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      report.affectedRoutes.some(route => route.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesType = typeFilter === 'all' || report.type === typeFilter;
-    const matchesSeverity = severityFilter === 'all' || report.severityLevel === severityFilter;
-    
-    return matchesSearch && matchesType && matchesSeverity;
-  });
 
   const resetForm = () => {
     setFormData(DEFAULT_HAZARD_FORM);
@@ -345,7 +349,7 @@ export function DeathTrapReporting() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredReports.map((report) => (
+              {reports.map((report) => (
                 <TableRow key={report.id}>
                   <TableCell className="font-medium">{report.id}</TableCell>
                   <TableCell>
@@ -441,6 +445,13 @@ export function DeathTrapReporting() {
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            page={page}
+            pagination={pagination}
+            onPageChange={setPage}
+            loading={loading}
+            itemLabel="reports"
+          />
         </CardContent>
       </Card>
 

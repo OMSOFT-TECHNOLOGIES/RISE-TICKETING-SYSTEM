@@ -65,6 +65,10 @@ interface PassengerBookingFormFieldsProps {
   phoneLookup?: boolean;
   profileFound?: boolean;
   duplicateOnTrip?: boolean;
+  /** Hide full registration fields when returning passenger is recognized */
+  compactWhenProfileFound?: boolean;
+  /** Trip fare from schedule — read-only when set from selected trip */
+  fareReadOnly?: boolean;
 }
 
 export function PassengerBookingFormFields({
@@ -79,23 +83,22 @@ export function PassengerBookingFormFields({
   phoneLookup = false,
   profileFound = false,
   duplicateOnTrip = false,
+  compactWhenProfileFound = true,
+  fareReadOnly = false,
 }: PassengerBookingFormFieldsProps) {
+  const hasEmergencyOnFile = Boolean(
+    values.emergencyContactName?.trim() &&
+      values.emergencyContactPhone?.trim() &&
+      values.emergencyContactRelationship?.trim()
+  );
+  const compact =
+    compactWhenProfileFound && profileFound && hasEmergencyOnFile && !phoneLookup;
+  const showEmergencySection = !profileFound || !hasEmergencyOnFile || !compactWhenProfileFound;
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-name`}>
-            Full name <span className="text-red-500">*</span>
-          </Label>
-          <Input
-            id={`${idPrefix}-name`}
-            value={values.name}
-            onChange={(e) => onChange({ name: e.target.value })}
-            placeholder="Passenger name"
-            required
-          />
-        </div>
-        <div className="space-y-2">
+        <div className="space-y-2 sm:col-span-2">
           <Label htmlFor={`${idPrefix}-phone`}>
             Phone <span className="text-red-500">*</span>
           </Label>
@@ -122,16 +125,40 @@ export function PassengerBookingFormFields({
             </p>
           )}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-email`}>Email</Label>
-          <Input
-            id={`${idPrefix}-email`}
-            type="email"
-            value={values.email}
-            onChange={(e) => onChange({ email: e.target.value })}
-            placeholder="passenger@email.com"
-          />
-        </div>
+        {compact ? (
+          <div className="space-y-1 sm:col-span-2 rounded-md border bg-muted/30 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Passenger</p>
+            <p className="font-medium">{values.name || '—'}</p>
+            {values.email ? (
+              <p className="text-xs text-muted-foreground">{values.email}</p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-name`}>
+              Full name <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id={`${idPrefix}-name`}
+              value={values.name}
+              onChange={(e) => onChange({ name: e.target.value })}
+              placeholder="Passenger name"
+              required
+            />
+          </div>
+        )}
+        {!compact && (
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-email`}>Email</Label>
+            <Input
+              id={`${idPrefix}-email`}
+              type="email"
+              value={values.email}
+              onChange={(e) => onChange({ email: e.target.value })}
+              placeholder="passenger@email.com"
+            />
+          </div>
+        )}
         {showSeatCount && (
           <div className="space-y-2">
             <Label htmlFor={`${idPrefix}-seats`}>Number of seats</Label>
@@ -189,11 +216,19 @@ export function PassengerBookingFormFields({
               value={values.fare}
               onChange={(e) => onChange({ fare: e.target.value })}
               placeholder="45.00"
+              readOnly={fareReadOnly}
+              className={fareReadOnly ? 'bg-muted/60' : undefined}
             />
+            {fareReadOnly && values.fare ? (
+              <p className="text-xs text-muted-foreground">
+                Fare from trip schedule (set when the trip was created)
+              </p>
+            ) : null}
           </div>
         )}
       </div>
 
+      {showEmergencySection && (
       <div className="space-y-4 rounded-lg border border-red-100 bg-red-50/40 p-4">
         <div className="flex items-center gap-2 text-red-700 font-medium">
           <Shield className="h-4 w-4" />
@@ -208,7 +243,7 @@ export function PassengerBookingFormFields({
               id={`${idPrefix}-ec-name`}
               value={values.emergencyContactName}
               onChange={(e) => onChange({ emergencyContactName: e.target.value })}
-              placeholder="Full name"
+              placeholder="Any name (letters, numbers, titles allowed)"
               required
             />
           </div>
@@ -228,26 +263,24 @@ export function PassengerBookingFormFields({
             <Label htmlFor={`${idPrefix}-ec-rel`}>
               Relationship <span className="text-red-500">*</span>
             </Label>
-            <Select
-              value={values.emergencyContactRelationship || undefined}
-              onValueChange={(value) =>
-                onChange({ emergencyContactRelationship: value })
-              }
-            >
-              <SelectTrigger id={`${idPrefix}-ec-rel`}>
-                <SelectValue placeholder="Select relationship" />
-              </SelectTrigger>
-              <SelectContent>
-                {RELATIONSHIP_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Input
+              id={`${idPrefix}-ec-rel`}
+              list={`${idPrefix}-ec-rel-list`}
+              value={values.emergencyContactRelationship}
+              onChange={(e) => onChange({ emergencyContactRelationship: e.target.value })}
+              placeholder="e.g. parent, spouse, friend"
+            />
+            <datalist id={`${idPrefix}-ec-rel-list`}>
+              {RELATIONSHIP_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </datalist>
           </div>
         </div>
       </div>
+      )}
 
       {showNotes && (
         <div className="space-y-2">

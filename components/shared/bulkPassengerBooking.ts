@@ -12,20 +12,47 @@ export function createQueueId(): string {
   return `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+export interface PassengerBookingValidationOptions {
+  /** Passenger already registered in RISE — phone lookup succeeded */
+  returningPassenger?: boolean;
+  /** Profile includes emergency contact on file */
+  hasStoredEmergency?: boolean;
+}
+
 export function validatePassengerBookingForm(
-  values: PassengerBookingFormValues
+  values: PassengerBookingFormValues,
+  options: PassengerBookingValidationOptions = {}
 ): string | null {
-  if (!values.name?.trim()) return 'Passenger name is required';
   if (!values.phone?.trim()) return 'Phone number is required';
-  if (!values.emergencyContactName?.trim()) {
-    return 'Emergency contact name is required';
+
+  const returning = options.returningPassenger === true;
+  if (!returning && !values.name?.trim()) return 'Passenger name is required';
+  if (returning && !values.name?.trim()) {
+    return 'Could not resolve passenger name — enter full details for a new passenger';
   }
-  if (!values.emergencyContactPhone?.trim()) {
-    return 'Emergency contact phone is required';
+
+  if (
+    values.emergencyContactPhone?.trim() &&
+    phonesMatch(values.phone, values.emergencyContactPhone)
+  ) {
+    return 'Emergency contact cannot use the same number as the passenger';
   }
-  if (!values.emergencyContactRelationship?.trim()) {
-    return 'Emergency contact relationship is required';
+
+  const needsEmergency =
+    !returning || !options.hasStoredEmergency;
+
+  if (needsEmergency) {
+    if (!values.emergencyContactName?.trim()) {
+      return 'Emergency contact name is required';
+    }
+    if (!values.emergencyContactPhone?.trim()) {
+      return 'Emergency contact phone is required';
+    }
+    if (!values.emergencyContactRelationship?.trim()) {
+      return 'Emergency contact relationship is required';
+    }
   }
+
   return null;
 }
 

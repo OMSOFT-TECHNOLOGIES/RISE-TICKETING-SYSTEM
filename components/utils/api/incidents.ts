@@ -1,5 +1,9 @@
-import { apiRequest } from './client';
+import { apiRequest, fetchAuthenticatedBlob } from './client';
 import type { ApiResponse } from './types';
+import {
+  incidentEvidenceDownloadUrl,
+  incidentEvidenceFileName,
+} from '../../IncidentManagement/utils/incidentEvidence';
 
 export const incidentApi = {
   getAll: async (params?: {
@@ -66,6 +70,46 @@ export const incidentApi = {
 
   getStatistics: async (): Promise<ApiResponse> => {
     return apiRequest('/api/incidents/statistics', { method: 'GET' });
+  },
+
+  uploadEvidence: async (id: string, file: File): Promise<ApiResponse> => {
+    const form = new FormData();
+    form.append('file', file);
+    return apiRequest(`/api/incidents/${encodeURIComponent(id)}/evidence`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+
+  fetchEvidenceBlob: async (
+    incidentId: string,
+    storedPath: string,
+    fallbackMime?: string
+  ): Promise<Blob> => {
+    const url = incidentEvidenceDownloadUrl(incidentId, storedPath);
+    const name = incidentEvidenceFileName(storedPath).toLowerCase();
+    let mime = fallbackMime ?? 'application/octet-stream';
+    if (/\.(jpe?g)$/.test(name)) mime = 'image/jpeg';
+    else if (/\.png$/.test(name)) mime = 'image/png';
+    else if (/\.gif$/.test(name)) mime = 'image/gif';
+    else if (/\.webp$/.test(name)) mime = 'image/webp';
+    else if (/\.mp4$/.test(name)) mime = 'video/mp4';
+    else if (/\.webm$/.test(name)) mime = 'video/webm';
+    else if (/\.mov$/.test(name)) mime = 'video/quicktime';
+    return fetchAuthenticatedBlob(url, mime);
+  },
+
+  evidencePreviewUrl: (incidentId: string, storedPath: string): string =>
+    incidentEvidenceDownloadUrl(incidentId, storedPath),
+
+  confirmPublicReport: async (
+    id: string,
+    data: { confirmationStatus: 'confirmed' | 'rejected'; confirmedByAgency: string }
+  ): Promise<ApiResponse> => {
+    return apiRequest(`/api/incidents/${id}/confirm`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   },
 
   getMap: async (params?: {

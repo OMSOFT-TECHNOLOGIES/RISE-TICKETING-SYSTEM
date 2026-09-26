@@ -33,7 +33,8 @@ import {
 import { cn } from './ui/utils';
 import { incidentApi, incidentClaimApi } from './utils/api';
 import { parseListResponse } from './utils/api/client';
-import { useEntityList } from './shared/hooks/useEntityList';
+import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
+import { TablePagination } from './shared/TablePagination';
 import { notify } from './utils/notify';
 
 interface IncidentOption {
@@ -59,7 +60,19 @@ interface IncidentClaim {
 }
 
 export function IncidentClaims() {
-  const fetchClaims = useCallback(() => incidentClaimApi.getAll(), []);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const fetchClaims = useCallback(
+    (page: number, limit: number) =>
+      incidentClaimApi.getAll({
+        page,
+        limit,
+        search: searchTerm.trim() || undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+      }),
+    [searchTerm, statusFilter]
+  );
   const {
     items: claims,
     loading,
@@ -67,18 +80,20 @@ export function IncidentClaims() {
     refresh,
     isSubmitting,
     setIsSubmitting,
-  } = useEntityList<IncidentClaim>({
+    page,
+    setPage,
+    pagination,
+  } = usePaginatedEntityList<IncidentClaim>({
     fetchFn: fetchClaims,
     entityKey: 'claims',
     errorMessage: 'Failed to load incident claims',
+    resetPageDeps: [searchTerm, statusFilter],
   });
 
   const [incidents, setIncidents] = useState<IncidentOption[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedClaim, setSelectedClaim] = useState<IncidentClaim | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const [openIncidentCombobox, setOpenIncidentCombobox] = useState(false);
 
@@ -126,17 +141,6 @@ export function IncidentClaims() {
       cancelled = true;
     };
   }, []);
-
-  const filteredClaims = claims.filter(claim => {
-    const matchesSearch = 
-      claim.claimantName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      claim.claimantPhone.includes(searchTerm) ||
-      claim.incidentId.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'all' || claim.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
 
   const resetForm = () => {
     setFormData({
@@ -534,7 +538,7 @@ export function IncidentClaims() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredClaims.map((claim) => (
+              {claims.map((claim) => (
                 <TableRow key={claim.id}>
                   <TableCell className="font-medium">{claim.id}</TableCell>
                   <TableCell>
@@ -609,6 +613,13 @@ export function IncidentClaims() {
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            page={page}
+            pagination={pagination}
+            onPageChange={setPage}
+            loading={loading}
+            itemLabel="claims"
+          />
         </CardContent>
       </Card>
 

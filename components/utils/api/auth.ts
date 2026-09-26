@@ -1,4 +1,10 @@
-import { apiRequest, removeAuthToken, setAuthToken } from './client';
+import {
+  apiRequest,
+  clearAuthTokens,
+  removeAuthToken,
+  setAuthToken,
+  setRefreshToken,
+} from './client';
 import type { ApiResponse, LoginResponse } from './types';
 
 export const authApi = {
@@ -10,9 +16,19 @@ export const authApi = {
 
     if (response.success && response.data?.token) {
       setAuthToken(response.data.token);
+      if (response.data.refreshToken) {
+        setRefreshToken(response.data.refreshToken);
+      }
     }
 
     return response;
+  },
+
+  refresh: async (refreshToken: string): Promise<ApiResponse<LoginResponse>> => {
+    return apiRequest<LoginResponse>('/api/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    });
   },
 
   logout: async (): Promise<ApiResponse> => {
@@ -20,7 +36,7 @@ export const authApi = {
       method: 'POST',
     });
 
-    removeAuthToken();
+    clearAuthTokens();
     return response;
   },
 
