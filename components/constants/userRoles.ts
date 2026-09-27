@@ -11,6 +11,16 @@ export const userRoles = [
     description: 'Safety and incident reporting',
   },
   {
+    value: 'incident_investigator',
+    label: 'Incident Investigator',
+    description: 'Confirm and manage reported road incidents',
+  },
+  {
+    value: 'hospital_incident_claimer',
+    label: 'Hospital Incident Claimer',
+    description: 'Submit hospital claims after investigator approval on the incident',
+  },
+  {
     value: 'station_manager',
     label: 'Station Manager',
     description: 'Full management of an assigned station',
@@ -30,4 +40,16 @@ export function isStationBoundRole(role?: string): boolean {
 
 export function isStationOperationsRole(role?: string): boolean {
   return STATION_OPERATIONS_ROLES.includes(role as (typeof STATION_OPERATIONS_ROLES)[number]);
+}
+
+export function isIncidentInvestigatorRole(role?: string): boolean {
+  return role === 'incident_investigator';
+}
+
+export function isHospitalIncidentClaimerRole(role?: string): boolean {
+  return role === 'hospital_incident_claimer';
+}
+
+export function isDistrictIncidentReporterRole(role?: string): boolean {
+  return role === 'district_incident_reporter';
 }

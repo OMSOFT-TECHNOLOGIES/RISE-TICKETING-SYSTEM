@@ -40,6 +40,28 @@ export const incidentApi = {
     return apiRequest(`/api/incidents/${id}`, { method: 'GET' });
   },
 
+  getClaimOptions: async (params?: {
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<ApiResponse> => {
+    const queryParams = new URLSearchParams();
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    const queryString = queryParams.toString();
+    return apiRequest(`/api/incidents/claim-options${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
+    });
+  },
+
+  getClaimantCandidates: async (incidentId: string): Promise<ApiResponse> => {
+    return apiRequest(
+      `/api/incidents/${encodeURIComponent(incidentId)}/claimant-candidates`,
+      { method: 'GET' }
+    );
+  },
+
   create: async (incidentData: unknown): Promise<ApiResponse> => {
     return apiRequest('/api/incidents', {
       method: 'POST',

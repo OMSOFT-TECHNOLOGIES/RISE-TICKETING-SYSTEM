@@ -1,5 +1,9 @@
-import { apiRequest } from './client';
+import { apiRequest, fetchAuthenticatedBlob } from './client';
 import type { ApiResponse } from './types';
+import {
+  claimDocumentDownloadUrl,
+  guessClaimDocumentMime,
+} from '../../IncidentClaims/claimDocuments';
 
 export const incidentClaimApi = {
   getAll: async (params?: {
@@ -42,7 +46,48 @@ export const incidentClaimApi = {
     });
   },
 
+  investigatorReview: async (
+    id: string,
+    data: { approved: boolean; notes?: string }
+  ): Promise<ApiResponse> => {
+    return apiRequest(`/api/incident-claims/${id}/investigator-review`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  uploadDocument: async (
+    id: string,
+    file: File,
+    category: 'evidence' | 'medical_receipt' | 'medical_report'
+  ): Promise<ApiResponse> => {
+    const form = new FormData();
+    form.append('file', file);
+    const query = new URLSearchParams({ category });
+    return apiRequest(`/api/incident-claims/${encodeURIComponent(id)}/documents?${query}`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+
+  getCompensationTiers: async (): Promise<ApiResponse> => {
+    return apiRequest('/api/incident-claims/compensation-tiers', { method: 'GET' });
+  },
+
+  updateCompensationTiers: async (tiers: unknown): Promise<ApiResponse> => {
+    return apiRequest('/api/incident-claims/compensation-tiers', {
+      method: 'PUT',
+      body: JSON.stringify({ tiers }),
+    });
+  },
+
   getStatistics: async (): Promise<ApiResponse> => {
     return apiRequest('/api/incident-claims/statistics', { method: 'GET' });
+  },
+
+  fetchDocumentBlob: async (claimId: string, storedPath: string): Promise<Blob> => {
+    const url = claimDocumentDownloadUrl(claimId, storedPath);
+    const mime = guessClaimDocumentMime(storedPath);
+    return fetchAuthenticatedBlob(url, mime);
   },
 };

@@ -17,6 +17,8 @@ export type UserRole =
   | 'admin_operation' 
   | 'admin_hrm' 
   | 'district_incident_reporter'
+  | 'incident_investigator'
+  | 'hospital_incident_claimer'
   | 'station_manager'
   | 'station_worker';
 
@@ -140,6 +142,20 @@ const rolePermissions: Record<UserRole, string[]> = {
     'view_death_traps',
     'create_death_trap_reports',
     'view_reports' // Added for accident analysis access
+  ],
+
+  incident_investigator: [
+    'view_dashboard',
+    'manage_incidents',
+    'view_reports',
+    'approve_claims',
+    'view_claims',
+  ],
+
+  hospital_incident_claimer: [
+    'view_dashboard',
+    'submit_claims',
+    'view_claims',
   ],
   
   // Station Manager - Station-scoped leadership (fleet, staff, operations)

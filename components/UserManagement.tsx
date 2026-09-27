@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -9,6 +9,7 @@ import {
   Plus, 
   Edit, 
   Eye,
+  EyeOff,
   Shield,
   Mail,
   Phone,
@@ -43,6 +44,12 @@ import {
 } from './ui/alert-dialog';
 import { UserEditDialog, type EditableUser } from './UserManagement/UserEditDialog';
 import { canCreateUsers, canModifyUser } from './UserManagement/userAccess';
+import { PasswordConfirmFeedback } from './shared/PasswordConfirmFeedback';
+import {
+  passwordsMatch,
+  validatePasswordConfirmation,
+  validatePasswordStrength,
+} from './utils/passwordValidation';
 
 type UserFormRoleOption = {
   value: string;
@@ -77,6 +84,8 @@ export function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [newUser, setNewUser] = useState({
@@ -85,6 +94,7 @@ export function UserManagement() {
     fullName: '',
     phone: '',
     password: '',
+    confirmPassword: '',
     role: 'station_worker',
     stationId: '',
     region: '',
@@ -133,6 +143,28 @@ export function UserManagement() {
   };
 
   const selectedRoleOption = formOptions?.roles.find((role) => role.value === newUser.role);
+
+  const newUserPasswordReady = useMemo(() => {
+    if (validatePasswordStrength(newUser.password)) return false;
+    return passwordsMatch(newUser.password, newUser.confirmPassword);
+  }, [newUser.password, newUser.confirmPassword]);
+
+  const syncPasswordFieldErrors = (password: string, confirmPassword: string) => {
+    setFormErrors((prev) => {
+      const next = { ...prev };
+      const strengthError = validatePasswordStrength(password);
+      next.password = strengthError ?? '';
+
+      if (!confirmPassword.trim()) {
+        next.confirmPassword = '';
+      } else {
+        const confirmError = validatePasswordConfirmation(password, confirmPassword);
+        next.confirmPassword = confirmError ?? '';
+      }
+
+      return next;
+    });
+  };
   const stationOptions = formOptions?.stations ?? [];
   const regionOptions = formOptions?.regions ?? [];
   const districtOptions =
@@ -232,14 +264,19 @@ export function UserManagement() {
       errors.phone = 'Please enter a valid phone number (at least 10 digits)';
     }
     
-    if (!newUser.password.trim()) {
-      errors.password = 'Password is required';
-    } else if (newUser.password.length < 8) {
-      errors.password = 'Password must be at least 8 characters';
-    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(newUser.password)) {
-      errors.password = 'Password must contain uppercase, lowercase, and number';
+    const passwordError = validatePasswordStrength(newUser.password);
+    if (passwordError) {
+      errors.password = passwordError;
     }
-    
+
+    const confirmError = validatePasswordConfirmation(
+      newUser.password,
+      newUser.confirmPassword
+    );
+    if (confirmError) {
+      errors.confirmPassword = confirmError;
+    }
+
     if (selectedRoleOption?.requiresStation && !newUser.stationId) {
       errors.stationId = 'Station assignment is required for this role';
     }
@@ -299,13 +336,16 @@ export function UserManagement() {
           email: '', 
           fullName: '', 
           phone: '', 
-          password: '', 
+          password: '',
+          confirmPassword: '',
           role: 'station_worker', 
           stationId: '', 
           region: '', 
           district: '' 
         });
         setFormErrors({});
+        setShowNewPassword(false);
+        setShowConfirmPassword(false);
         setShowAddDialog(false);
       } else {
         console.error('Create user error:', response);
@@ -506,12 +546,15 @@ export function UserManagement() {
           }
           if (!open) {
             setFormErrors({});
+            setShowNewPassword(false);
+            setShowConfirmPassword(false);
             setNewUser({ 
               username: '', 
               email: '', 
               fullName: '', 
               phone: '', 
-              password: '', 
+              password: '',
+              confirmPassword: '',
               role: 'station_worker', 
               stationId: '', 
               region: '', 
@@ -677,39 +720,104 @@ export function UserManagement() {
                   )}
                 </div>
 
-                <div className="space-y-2.5">
-                  <Label htmlFor="password" className="flex items-center gap-1.5 text-sm font-semibold">
-                    Password
-                    <span className="text-destructive font-bold">*</span>
-                  </Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={newUser.password}
-                    onChange={(e) => {
-                      setNewUser({...newUser, password: e.target.value});
-                      if (formErrors.password) {
-                        setFormErrors({...formErrors, password: ''});
-                      }
-                    }}
-                    placeholder="Create a strong password"
-                    className={`h-11 ${formErrors.password ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.password && (
-                    <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
-                      <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                      <p className="text-sm text-destructive font-medium">
-                        {formErrors.password}
-                      </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2.5">
+                    <Label htmlFor="password" className="flex items-center gap-1.5 text-sm font-semibold">
+                      Password
+                      <span className="text-destructive font-bold">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={newUser.password}
+                        onChange={(e) => {
+                          const password = e.target.value;
+                          setNewUser({ ...newUser, password });
+                          syncPasswordFieldErrors(password, newUser.confirmPassword);
+                        }}
+                        placeholder="Create a strong password"
+                        className={`h-11 pr-10 ${formErrors.password ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                        disabled={isSubmitting}
+                        autoComplete="new-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowNewPassword((v) => !v)}
+                        tabIndex={-1}
+                        aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
                     </div>
-                  )}
-                  {!formErrors.password && (
-                    <p className="text-xs text-muted-foreground">
-                      Minimum 8 characters with uppercase, lowercase, and number
-                    </p>
-                  )}
+                    {formErrors.password && (
+                      <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
+                        <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
+                        <p className="text-sm text-destructive font-medium">{formErrors.password}</p>
+                      </div>
+                    )}
+                    {!formErrors.password && (
+                      <p className="text-xs text-muted-foreground">
+                        Minimum 8 characters with uppercase, lowercase, and number
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <Label htmlFor="confirmPassword" className="flex items-center gap-1.5 text-sm font-semibold">
+                      Confirm password
+                      <span className="text-destructive font-bold">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="confirmPassword"
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={newUser.confirmPassword}
+                        onChange={(e) => {
+                          const confirmPassword = e.target.value;
+                          setNewUser({ ...newUser, confirmPassword });
+                          syncPasswordFieldErrors(newUser.password, confirmPassword);
+                        }}
+                        placeholder="Re-enter password"
+                        className={`h-11 pr-10 ${formErrors.confirmPassword ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                        disabled={isSubmitting}
+                        autoComplete="new-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowConfirmPassword((v) => !v)}
+                        tabIndex={-1}
+                        aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </div>
+                    {formErrors.confirmPassword && (
+                      <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
+                        <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
+                        <p className="text-sm text-destructive font-medium">{formErrors.confirmPassword}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
+                <PasswordConfirmFeedback
+                  password={newUser.password}
+                  confirmPassword={newUser.confirmPassword}
+                />
               </div>
 
               {/* Role & Assignment Section */}
@@ -890,7 +998,9 @@ export function UserManagement() {
                 </Button>
                 <Button 
                   onClick={handleAddUser} 
-                  disabled={isSubmitting || formOptionsLoading || !formOptions}
+                  disabled={
+                    isSubmitting || formOptionsLoading || !formOptions || !newUserPasswordReady
+                  }
                   className="min-w-[140px] h-11 px-6 font-semibold shadow-lg bg-[#193cb8] hover:bg-[#142f9e] text-white"
                 >
                   {isSubmitting ? (

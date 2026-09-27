@@ -75,6 +75,7 @@ import {
   type PassengerBookingFormValues,
 } from './shared/PassengerBookingFormFields';
 import {
+  completePassengerBookingSession,
   createQueueId,
   isPhoneBookedForTrip,
   validatePassengerBookingForm,
@@ -427,6 +428,7 @@ export function TripBooking() {
   const [duplicateTripBooking, setDuplicateTripBooking] = useState(false);
   const [bookingQueue, setBookingQueue] = useState<QueuedPassengerBooking[]>([]);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [sessionCompleting, setSessionCompleting] = useState(false);
   const passengerLookupSeq = useRef(0);
 
   useEffect(() => {
@@ -789,13 +791,14 @@ export function TripBooking() {
 
     setBulkSubmitting(true);
     try {
-      await issueETicket(buildPassengerBookInput(passengerBooking, trip), {
+      const ticket = await issueETicket(buildPassengerBookInput(passengerBooking, trip), {
         printTicket: true,
+        sendSms: false,
       });
 
       setBookingQueue((prev) => [
         ...prev,
-        { ...passengerBooking, queueId: createQueueId() },
+        { ...passengerBooking, queueId: createQueueId(), ticketId: ticket.id },
       ]);
       clearPassengerFormFields();
 
@@ -819,11 +822,22 @@ export function TripBooking() {
   };
 
   const closePassengerBookDialog = (force = false) => {
-    if (!force && bulkSubmitting) {
+    if (!force && (bulkSubmitting || sessionCompleting)) {
       return;
     }
     setShowPassengerBookDialog(false);
     resetPassengerBookingForm();
+  };
+
+  const handleBookingSessionDone = async () => {
+    if (bulkSubmitting || sessionCompleting) return;
+    setSessionCompleting(true);
+    try {
+      await completePassengerBookingSession(bookingQueue);
+      closePassengerBookDialog(true);
+    } finally {
+      setSessionCompleting(false);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -1767,10 +1781,17 @@ export function TripBooking() {
               type="button"
               variant="outline"
               className="flex-1"
-              onClick={() => closePassengerBookDialog()}
-              disabled={bulkSubmitting}
+              onClick={() => void handleBookingSessionDone()}
+              disabled={bulkSubmitting || sessionCompleting}
             >
-              Done
+              {sessionCompleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Sending SMS…
+                </>
+              ) : (
+                'Done'
+              )}
             </Button>
           </div>
         </DialogContent>

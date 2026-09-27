@@ -252,7 +252,7 @@ export async function issueETicket(
   input: BookPassengerInput,
   options: IssueETicketOptions = {}
 ): Promise<ETicket> {
-  const { showSuccessToast = true, printTicket = true } = options;
+  const { showSuccessToast = true, printTicket = true, sendSms = false } = options;
   const response = await passengerApi.addToTrip(input.tripId, {
     name: input.passengerName,
     phone: input.passengerPhone,
@@ -262,6 +262,7 @@ export async function issueETicket(
     dropoffPoint: input.routeTo,
     fare: input.fare,
     seats: 1,
+    sendSms,
     emergencyContactName: input.emergencyContactName,
     emergencyContactPhone: input.emergencyContactPhone,
     emergencyContactRelationship: input.emergencyContactRelationship,
@@ -293,16 +294,22 @@ export async function issueETicket(
   };
 
   if (showSuccessToast) {
-    if (ticket.smsStatus === 'sent') {
-      notify.success(`E-ticket sent via SMS to ${input.passengerPhone}`, {
-        description: `${input.passengerName} received their ticket link.`,
-      });
-    } else if (ticket.smsStatus === 'failed') {
-      notify.error('Passenger booked but SMS failed', {
-        description: 'Use Resend SMS from the Tickets page.',
-      });
+    if (sendSms) {
+      if (ticket.smsStatus === 'sent') {
+        notify.success(`E-ticket sent via SMS to ${input.passengerPhone}`, {
+          description: `${input.passengerName} received their ticket link.`,
+        });
+      } else if (ticket.smsStatus === 'failed') {
+        notify.error('Passenger booked but SMS failed', {
+          description: 'Use Resend SMS from the Tickets page.',
+        });
+      } else {
+        notify.success(`${input.passengerName} booked successfully`);
+      }
     } else {
-      notify.success(`${input.passengerName} booked successfully`);
+      notify.success(`${input.passengerName} booked`, {
+        description: 'Ticket printed. E-ticket SMS sends when you click Done.',
+      });
     }
   }
 
@@ -319,6 +326,46 @@ export async function issueETicket(
   }
 
   return ticket;
+}
+
+/** Send deferred e-ticket SMS for passengers booked in the current session. */
+export async function sendSessionTicketSms(
+  ticketIds: string[]
+): Promise<{ sent: number; failed: number }> {
+  let sent = 0;
+  let failed = 0;
+
+  for (const ticketId of ticketIds) {
+    if (!ticketId) continue;
+    try {
+      const response = await ticketApi.sendSms(ticketId);
+      if (response.success) {
+        sent += 1;
+      } else {
+        failed += 1;
+      }
+    } catch {
+      failed += 1;
+    }
+  }
+
+  if (sent > 0 && failed === 0) {
+    notify.success(
+      sent === 1
+        ? 'E-ticket SMS sent to passenger'
+        : `E-ticket SMS sent to ${sent} passengers`
+    );
+  } else if (sent > 0 && failed > 0) {
+    notify.warning(`SMS sent to ${sent} passenger(s), ${failed} failed`, {
+      description: 'Use Passenger Tickets to resend failed messages.',
+    });
+  } else if (failed > 0 && sent === 0) {
+    notify.error('Could not send e-ticket SMS', {
+      description: 'Use Passenger Tickets to resend.',
+    });
+  }
+
+  return { sent, failed };
 }
 
 export async function resendETicketSms(ticket: ETicket): Promise<ETicket> {

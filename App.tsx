@@ -11,10 +11,10 @@ import { SidebarProvider, SidebarInset } from './components/ui/sidebar';
 import { ThemeProvider } from './components/ThemeProvider';
 import { Toaster } from './components/ui/sonner';
 import ErrorBoundary from './components/ErrorBoundary';
-import { Shield, AlertTriangle, Loader2 } from 'lucide-react';
-import { DEFAULT_PAGE, isSafetyIncidentPage, isStationWorkerPage } from './components/config/pages';
+import { Loader2 } from 'lucide-react';
+import { DEFAULT_PAGE } from './components/config/pages';
 import { renderPage } from './components/utils/pageRouter';
-import { checkPageAccess, getAccessLevelInfo } from './components/utils/accessControl';
+import { checkPageAccess } from './components/utils/accessControl';
 import {
   PageActionProvider,
   type PageActionId,
@@ -27,7 +27,7 @@ function resolveSavedPage(saved: string): { page: string; action: PageActionId |
 }
 
 function AppContent() {
-  const { isAuthenticated, authReady, user, hasPermission, isSuperAdmin, isAdmin } = useAuth();
+  const { isAuthenticated, authReady, user, hasPermission, isSuperAdmin } = useAuth();
   const [initialPageState] = useState(() => {
     const saved = localStorage.getItem('rise-current-page') || DEFAULT_PAGE;
     return resolveSavedPage(saved);
@@ -101,10 +101,10 @@ function AppContent() {
 
   if (!authReady) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-3">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-[#193cb8]" />
-          <p className="text-sm text-muted-foreground">Checking your session…</p>
+      <div className="min-h-screen flex items-center justify-center rise-auth-mesh">
+        <div className="text-center space-y-3 rounded-2xl bg-white/10 backdrop-blur px-8 py-6 ring-1 ring-white/20">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-white" />
+          <p className="text-sm text-white/80">Checking your session…</p>
         </div>
       </div>
     );
@@ -129,14 +129,12 @@ function AppContent() {
     // We keep it for compatibility but it's not needed anymore
   };
 
-  const accessInfo = getAccessLevelInfo(isSuperAdmin, isAdmin, user?.role);
-
   return (
     <PageActionProvider
       onPageChange={handlePageChange}
       initialPendingAction={initialPageState.action}
     >
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[var(--rise-surface)] dark:bg-background">
       <SidebarProvider defaultOpen={true}>
         <div className="flex min-h-screen w-full">
           {/* Sidebar - Handles both desktop and mobile */}
@@ -148,37 +146,14 @@ function AppContent() {
           {/* Main Content Area */}
           <SidebarInset className="flex-1 flex flex-col min-w-0">
             {/* Header */}
-            <Header 
+            <Header
               onMenuToggle={handleMobileMenuToggle}
               onSettingsOpen={handleSettingsOpen}
+              currentPage={currentPage}
+              showSettings={showSettings}
             />
 
-            {/* System Alerts */}
             <SystemAlerts />
-
-            {/* Access Level Indicator */}
-            {user && (
-              <div className="bg-muted/50 border-b px-6 py-2">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center space-x-2">
-                    <Shield className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Access Level:</span>
-                    <span className={`font-medium ${accessInfo.color}`}>
-                      {accessInfo.label}
-                    </span>
-                  </div>
-                  {/* Only show limited access warning for non-admin roles, but not for incident reporters on safety pages */}
-                  {!isSuperAdmin() && !isAdmin() &&
-                    !(user?.role === 'district_incident_reporter' && isSafetyIncidentPage(currentPage)) &&
-                    !(user?.role === 'station_worker' && isStationWorkerPage(currentPage)) && (
-                    <div className="flex items-center space-x-1 text-muted-foreground">
-                      <AlertTriangle className="h-3 w-3" />
-                      <span className="text-xs">Limited Access</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* Page Content */}
             <main className="flex-1 overflow-auto">

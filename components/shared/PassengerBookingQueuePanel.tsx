@@ -16,7 +16,7 @@ export function PassengerBookingQueuePanel({
     return (
       <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
         <Users className="h-5 w-5 mx-auto mb-2 opacity-60" />
-        Booked passengers will appear here after each ticket is printed.
+        Booked passengers appear here after each ticket is printed. E-ticket SMS sends when you click Done.
       </div>
     );
   }

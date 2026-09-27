@@ -3,6 +3,7 @@ import { MapPin, Route, UserPlus } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuItem,
@@ -17,6 +18,7 @@ import { isStationOperationsRole } from './constants/userRoles';
 import { canViewNavItem, isNavItemRestricted } from './utils/navAccess';
 import { usePageAction } from './context/PageActionContext';
 import { useNavBadges } from './shared/hooks/useNavBadges';
+import { getAccessLevelInfo } from './utils/accessControl';
 
 interface NavigationProps {
   currentPage: string;
@@ -25,12 +27,13 @@ interface NavigationProps {
 }
 
 export function Navigation({ currentPage, onPageChange, isMobile = false }: NavigationProps) {
-  const { user, hasPermission, isSuperAdmin } = useAuth();
+  const { user, hasPermission, isSuperAdmin, isAdmin } = useAuth();
   const { navigateWithAction } = usePageAction();
   const { state } = useSidebar();
   const navBadges = useNavBadges();
 
   const isCollapsed = state === 'collapsed' && !isMobile;
+  const accessInfo = getAccessLevelInfo(isSuperAdmin, isAdmin, user?.role);
 
   const renderMenuItem = (item: NavItem) => {
     if (!isSuperAdmin() && !canViewNavItem(item, hasPermission, user?.role)) {
@@ -62,7 +65,7 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
                 {isRestricted && (
                   <Badge
                     variant="outline"
-                    className="text-xs font-medium bg-orange-50 text-orange-600 border-orange-200"
+                    className="text-xs font-medium bg-orange-50 text-orange-600 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800"
                   >
                     Limited
                   </Badge>
@@ -112,9 +115,9 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
             <MapPin className="h-4 w-4" />
           </div>
           {!isCollapsed && (
-            <div className="flex flex-col">
-              <span className="text-base font-semibold">RISE</span>
-              <span className="text-xs text-muted-foreground font-normal">
+            <div className="flex flex-col min-w-0">
+              <span className="text-base font-semibold leading-none">RISE</span>
+              <span className="text-xs text-muted-foreground font-normal mt-1">
                 Transport Management
               </span>
             </div>
@@ -123,18 +126,19 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
 
         {!isCollapsed && user && (
           <div className="mt-4 p-3 bg-muted rounded-lg">
-            <div className="text-sm font-medium">{user?.fullName}</div>
+            <div className="text-sm font-medium truncate">{user.fullName}</div>
             <div className="text-xs text-muted-foreground font-normal capitalize">
-              {user?.role?.replace('_', ' ')}
+              {user.role?.replace(/_/g, ' ')}
             </div>
-            {user?.stationName && (
-              <div className="text-xs text-muted-foreground font-normal">
-                📍 {user.stationName}
+            {user.stationName && (
+              <div className="text-xs text-muted-foreground font-normal truncate">
+                {user.stationName}
               </div>
             )}
-            {user?.region && (
-              <div className="text-xs text-muted-foreground font-normal">
-                🏛️ {user.region} {user.district && `- ${user.district}`}
+            {user.region && (
+              <div className="text-xs text-muted-foreground font-normal truncate">
+                {user.region}
+                {user.district ? ` - ${user.district}` : ''}
               </div>
             )}
           </div>
@@ -161,7 +165,7 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     onClick={() => navigateWithAction('trips', 'new-trip')}
-                    className="w-full justify-start text-sm font-normal text-[#193cb8]"
+                    className="w-full justify-start text-sm font-normal text-[#193cb8] dark:text-blue-400"
                     tooltip={isCollapsed ? 'Schedule New Trip' : undefined}
                   >
                     <Route className="h-4 w-4 shrink-0" />
@@ -171,7 +175,7 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     onClick={() => navigateWithAction('passengers', 'new-passenger')}
-                    className="w-full justify-start text-sm font-normal text-emerald-600"
+                    className="w-full justify-start text-sm font-normal text-emerald-600 dark:text-emerald-400"
                     tooltip={isCollapsed ? 'Book Passenger' : undefined}
                   >
                     <UserPlus className="h-4 w-4 shrink-0" />
@@ -185,7 +189,7 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
         )}
 
         {!isCollapsed && user && (
-          <div className="px-3 py-2 mt-4">
+          <div className="px-3 py-2 mt-2">
             <div className="px-4 py-3 bg-muted rounded-lg">
               <div
                 className="font-medium tracking-wide text-muted-foreground uppercase mb-2"
@@ -193,51 +197,27 @@ export function Navigation({ currentPage, onPageChange, isMobile = false }: Navi
               >
                 Access Level
               </div>
-              <div className="text-xs space-y-1">
-                {user?.role === 'super_admin' && (
-                  <div className="text-red-600">🔓 Full System Access</div>
-                )}
-                {user?.role === 'admin' && (
-                  <div className="text-orange-600">🔐 Administrative Access</div>
-                )}
-                {user?.role === 'regional_manager' && (
-                  <div className="text-[#193cb8]">🏛️ Regional Management</div>
-                )}
-                {user?.role === 'district_manager' && (
-                  <div className="text-green-600">🏢 District Management</div>
-                )}
-                {user?.role === 'admin_operation' && (
-                  <div className="text-purple-600">⚙️ Operations Management</div>
-                )}
-                {user?.role === 'admin_hrm' && (
-                  <div className="text-pink-600">👥 HR Management</div>
-                )}
-                {user?.role === 'district_incident_reporter' && (
-                  <div className="text-yellow-600">⚠️ Incident Reporting</div>
-                )}
-                {user?.role === 'station_manager' && (
-                  <div className="text-teal-700">🏢 Station Management</div>
-                )}
-                {user?.role === 'station_worker' && (
-                  <div className="text-gray-600">🚌 Station Operations</div>
-                )}
-
-                {user?.role === 'admin' && !isSuperAdmin() && (
-                  <div className="text-xs text-orange-500 bg-orange-50 p-2 rounded mt-2">
-                    <div className="font-medium text-xs">Restrictions:</div>
-                    <ul className="text-xs font-normal mt-1 space-y-1">
-                      <li>• Limited user management</li>
-                      <li>• No union management</li>
-                      <li>• No claims processing</li>
-                      <li>• No safety reporting</li>
-                    </ul>
-                  </div>
-                )}
-              </div>
+              <div className="text-xs text-muted-foreground">{accessInfo.description}</div>
             </div>
           </div>
         )}
       </SidebarContent>
+
+      {isCollapsed && user && (
+        <SidebarFooter className="border-t p-2">
+          <div
+            className="mx-auto flex h-8 w-8 items-center justify-center rounded-md bg-muted text-[10px] font-semibold text-muted-foreground"
+            title={user.fullName}
+          >
+            {user.fullName
+              .split(' ')
+              .map((n) => n[0])
+              .join('')
+              .slice(0, 2)
+              .toUpperCase()}
+          </div>
+        </SidebarFooter>
+      )}
     </Sidebar>
   );
 }

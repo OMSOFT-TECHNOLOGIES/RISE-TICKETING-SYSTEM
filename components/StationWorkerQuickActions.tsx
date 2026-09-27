@@ -40,7 +40,7 @@ const ACTIONS: {
     id: 'new-passenger',
     page: 'passengers',
     title: 'Book Passenger',
-    description: 'Register a passenger — e-ticket sent via SMS automatically',
+    description: 'Register passengers — print tickets, then send e-ticket SMS with Done',
     icon: UserPlus,
     accent: 'text-emerald-600',
     iconBg: 'bg-emerald-50 border-emerald-200/60',

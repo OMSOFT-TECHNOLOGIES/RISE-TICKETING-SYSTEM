@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { useTheme } from './ThemeProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -27,6 +27,12 @@ import {
   MapPin
 } from 'lucide-react';
 import { notify } from './utils/notify';
+import { PasswordConfirmFeedback } from './shared/PasswordConfirmFeedback';
+import {
+  passwordsMatch,
+  validatePasswordConfirmation,
+  validatePasswordStrength,
+} from './utils/passwordValidation';
 
 export function Settings() {
   const { user } = useAuth();
@@ -73,10 +79,30 @@ export function Settings() {
     // Theme changes are automatically saved by the ThemeProvider
   };
 
+  const passwordChangeAttempted =
+    Boolean(settings.newPassword.trim()) || Boolean(settings.confirmPassword.trim());
+
+  const profilePasswordValid = useMemo(() => {
+    if (!passwordChangeAttempted) return true;
+    if (validatePasswordStrength(settings.newPassword)) return false;
+    return passwordsMatch(settings.newPassword, settings.confirmPassword);
+  }, [passwordChangeAttempted, settings.newPassword, settings.confirmPassword]);
+
   const handleProfileUpdate = () => {
-    if (settings.newPassword && settings.newPassword !== settings.confirmPassword) {
-      notify.error('New passwords do not match');
-      return;
+    if (passwordChangeAttempted) {
+      const strengthError = validatePasswordStrength(settings.newPassword);
+      if (strengthError) {
+        notify.error(strengthError);
+        return;
+      }
+      const confirmError = validatePasswordConfirmation(
+        settings.newPassword,
+        settings.confirmPassword
+      );
+      if (confirmError) {
+        notify.error(confirmError);
+        return;
+      }
     }
     handleSave('Profile');
   };
@@ -245,9 +271,15 @@ export function Settings() {
                     />
                   </div>
                 </div>
+                {passwordChangeAttempted && (
+                  <PasswordConfirmFeedback
+                    password={settings.newPassword}
+                    confirmPassword={settings.confirmPassword}
+                  />
+                )}
               </div>
 
-              <Button onClick={handleProfileUpdate}>
+              <Button onClick={handleProfileUpdate} disabled={!profilePasswordValid}>
                 <Save className="h-4 w-4 mr-2" />
                 Save Changes
               </Button>

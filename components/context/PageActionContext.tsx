@@ -5,6 +5,7 @@ export type PageActionId = 'new-trip' | 'new-passenger' | 'new-user' | 'new-vehi
 interface PageActionContextType {
   pendingAction: PageActionId | null;
   navigateWithAction: (page: string, action: PageActionId) => void;
+  navigateToPage: (page: string) => void;
   clearAction: () => void;
 }
 
@@ -31,12 +32,22 @@ export function PageActionProvider({
     [onPageChange]
   );
 
+  const navigateToPage = useCallback(
+    (page: string) => {
+      onPageChange(page);
+      setPendingAction(null);
+    },
+    [onPageChange]
+  );
+
   const clearAction = useCallback(() => {
     setPendingAction(null);
   }, []);
 
   return (
-    <PageActionContext.Provider value={{ pendingAction, navigateWithAction, clearAction }}>
+    <PageActionContext.Provider
+      value={{ pendingAction, navigateWithAction, navigateToPage, clearAction }}
+    >
       {children}
     </PageActionContext.Provider>
   );

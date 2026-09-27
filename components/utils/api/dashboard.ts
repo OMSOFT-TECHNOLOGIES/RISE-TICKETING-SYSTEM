@@ -7,6 +7,11 @@ export const dashboardApi = {
     return apiRequest(`/api/dashboard/admin${queryString}`, { method: 'GET' });
   },
 
+  getOverview: async (period?: 'daily' | 'monthly' | 'yearly'): Promise<ApiResponse> => {
+    const queryString = period ? `?period=${period}` : '';
+    return apiRequest(`/api/dashboard/overview${queryString}`, { method: 'GET' });
+  },
+
   getStation: async (params?: {
     stationId?: string;
     period?: string;

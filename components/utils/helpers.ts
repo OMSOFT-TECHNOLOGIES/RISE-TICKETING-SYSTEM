@@ -103,6 +103,10 @@ export const getRoleBadgeClass = (role: string): string => {
       return 'bg-pink-100 text-pink-800';
     case 'district_incident_reporter':
       return 'bg-yellow-100 text-yellow-800';
+    case 'incident_investigator':
+      return 'bg-amber-100 text-amber-900';
+    case 'hospital_incident_claimer':
+      return 'bg-indigo-100 text-indigo-900';
     case 'station_manager':
       return 'bg-teal-100 text-teal-800';
     case 'station_worker':

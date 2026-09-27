@@ -1,11 +1,13 @@
 import { notify } from '../utils/notify';
-import { issueETicket } from '../utils/eTicket';
+import { issueETicket, sendSessionTicketSms } from '../utils/eTicket';
 import type { BookPassengerInput } from '../utils/eTicket.types';
 import { isPhoneOnTripManifest, phonesMatch } from '../utils/passengerLookup';
 import type { PassengerBookingFormValues } from './PassengerBookingFormFields';
 
 export interface QueuedPassengerBooking extends PassengerBookingFormValues {
   queueId: string;
+  /** Ticket created for this booking (SMS sent when session completes). */
+  ticketId?: string;
 }
 
 export function createQueueId(): string {
@@ -112,4 +114,16 @@ export async function submitQueuedPassengerBookings(
   }
 
   return { succeeded, failed };
+}
+
+/** Send e-ticket SMS for tickets booked this session, then clear the queue reference. */
+export async function completePassengerBookingSession(
+  queue: QueuedPassengerBooking[]
+): Promise<void> {
+  const ticketIds = queue
+    .map((entry) => entry.ticketId)
+    .filter((id): id is string => Boolean(id));
+  if (ticketIds.length > 0) {
+    await sendSessionTicketSms(ticketIds);
+  }
 }

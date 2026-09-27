@@ -53,6 +53,16 @@ export const SAFETY_INCIDENT_PAGES: PageId[] = [
   'accident-analysis',
 ];
 
+/** Pages for Incident Investigator (confirm incidents + approve claims to proceed). */
+export const INCIDENT_INVESTIGATOR_PAGES: PageId[] = [
+  'incidents',
+  'incident-claims',
+  'accident-analysis',
+];
+
+/** Hospital staff submitting injury claims. */
+export const HOSPITAL_INCIDENT_CLAIMER_PAGES: PageId[] = ['incident-claims'];
+
 /** Pages accessible to station workers (scoped station operations) */
 export const STATION_WORKER_PAGES: PageId[] = [
   'dashboard',
@@ -277,6 +287,14 @@ export function getPagesBySection(section: NavSection): PageConfig[] {
 
 export function isSafetyIncidentPage(pageId: string): boolean {
   return SAFETY_INCIDENT_PAGES.includes(pageId as PageId);
+}
+
+export function isIncidentInvestigatorPage(pageId: string): boolean {
+  return INCIDENT_INVESTIGATOR_PAGES.includes(pageId as PageId);
+}
+
+export function isHospitalIncidentClaimerPage(pageId: string): boolean {
+  return HOSPITAL_INCIDENT_CLAIMER_PAGES.includes(pageId as PageId);
 }
 
 export function resolvePageId(page: string): PageId {

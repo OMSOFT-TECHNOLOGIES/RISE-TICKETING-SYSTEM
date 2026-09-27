@@ -57,6 +57,7 @@ import {
   normalizePhoneDigits,
 } from './utils/passengerLookup';
 import {
+  completePassengerBookingSession,
   createQueueId,
   isPhoneBookedForTrip,
   validatePassengerBookingForm,
@@ -199,6 +200,7 @@ export function PassengerManagement() {
   const [addTripManifest, setAddTripManifest] = useState<PassengerRecord[]>([]);
   const [addBookingQueue, setAddBookingQueue] = useState<QueuedPassengerBooking[]>([]);
   const [addBulkSubmitting, setAddBulkSubmitting] = useState(false);
+  const [addSessionCompleting, setAddSessionCompleting] = useState(false);
   const addPhoneLookupSeq = useRef(0);
   const [addTripSearch, setAddTripSearch] = useState('');
   const [editPassenger, setEditPassenger] = useState<PassengerRecord | null>(null);
@@ -719,13 +721,14 @@ export function PassengerManagement() {
 
     setAddBulkSubmitting(true);
     try {
-      await issueETicket(buildBookInputFromEntry(newPassenger, trip), {
+      const ticket = await issueETicket(buildBookInputFromEntry(newPassenger, trip), {
         printTicket: true,
+        sendSms: false,
       });
 
       setAddBookingQueue((prev) => [
         ...prev,
-        { ...newPassenger, queueId: createQueueId() },
+        { ...newPassenger, queueId: createQueueId(), ticketId: ticket.id },
       ]);
       clearAddPassengerFormFields();
 
@@ -758,11 +761,22 @@ export function PassengerManagement() {
   };
 
   const closeAddPassengerDialog = (force = false) => {
-    if (!force && addBulkSubmitting) {
+    if (!force && (addBulkSubmitting || addSessionCompleting)) {
       return;
     }
     setShowAddDialog(false);
     resetAddPassengerForm();
+  };
+
+  const handleAddBookingSessionDone = async () => {
+    if (addBulkSubmitting || addSessionCompleting) return;
+    setAddSessionCompleting(true);
+    try {
+      await completePassengerBookingSession(addBookingQueue);
+      closeAddPassengerDialog(true);
+    } finally {
+      setAddSessionCompleting(false);
+    }
   };
 
   const exportPassengerList = async () => {
@@ -929,7 +943,7 @@ export function PassengerManagement() {
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-bold">Passenger Management</h1>
           <p className="text-muted-foreground">
-            Book passengers on trips — an e-ticket link is sent automatically via SMS
+            Book passengers on trips — e-ticket SMS is sent when you click Done after printing tickets
           </p>
         </div>
         <Button onClick={() => setShowAddDialog(true)}>
@@ -1628,10 +1642,17 @@ export function PassengerManagement() {
                 type="button"
                 variant="outline"
                 className="flex-1"
-                onClick={() => closeAddPassengerDialog()}
-                disabled={addBulkSubmitting}
+                onClick={() => void handleAddBookingSessionDone()}
+                disabled={addBulkSubmitting || addSessionCompleting}
               >
-                Done
+                {addSessionCompleting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Sending SMS…
+                  </>
+                ) : (
+                  'Done'
+                )}
               </Button>
             </div>
           </div>

@@ -85,16 +85,16 @@ export function UserActivityPanel() {
   const offlineUsers = filteredUsers.filter((user) => !user.isOnline);
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-0 shadow-none">
+      <CardHeader className="pb-3">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              User Activity
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+              <Users className="h-4 w-4 text-primary" />
+              User activity
             </CardTitle>
-            <CardDescription>
-              Active sessions, last seen, and login/logout history for all users
+            <CardDescription className="text-xs">
+              Active sessions, last seen, and login history
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -116,7 +116,7 @@ export function UserActivityPanel() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Active Now</p>
-                <p className="text-2xl font-bold text-emerald-700">{summary.activeUsers}</p>
+                <p className="text-xl font-semibold text-emerald-700 dark:text-emerald-400">{summary.activeUsers}</p>
               </div>
               <Wifi className="h-8 w-8 text-emerald-600" />
             </div>
@@ -125,7 +125,7 @@ export function UserActivityPanel() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Tracked Users</p>
-                <p className="text-2xl font-bold">{summary.totalTracked}</p>
+                <p className="text-xl font-semibold">{summary.totalTracked}</p>
               </div>
               <UserCheck className="h-8 w-8 text-[#193cb8]" />
             </div>
@@ -134,7 +134,7 @@ export function UserActivityPanel() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Offline</p>
-                <p className="text-2xl font-bold">{Math.max(summary.totalTracked - summary.activeUsers, 0)}</p>
+                <p className="text-xl font-semibold">{Math.max(summary.totalTracked - summary.activeUsers, 0)}</p>
               </div>
               <WifiOff className="h-8 w-8 text-muted-foreground" />
             </div>

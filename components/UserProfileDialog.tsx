@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -34,6 +34,12 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { notify } from './utils/notify';
+import { PasswordConfirmFeedback } from './shared/PasswordConfirmFeedback';
+import {
+  passwordsMatch,
+  validatePasswordConfirmation,
+  validatePasswordStrength,
+} from './utils/passwordValidation';
 import { authApi, dashboardApi } from './utils/api';
 import { userRoles } from './constants/userRoles';
 
@@ -85,6 +91,12 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
   const displayName = profileUser?.fullName ?? profileUser?.name ?? user?.fullName ?? '';
   const displayEmail = profileUser?.email ?? user?.email ?? '';
   const displayRole = profileUser?.role ?? user?.role ?? '';
+
+  const passwordChangeReady = useMemo(() => {
+    if (!editForm.currentPassword.trim()) return false;
+    if (validatePasswordStrength(editForm.newPassword)) return false;
+    return passwordsMatch(editForm.newPassword, editForm.confirmPassword);
+  }, [editForm.currentPassword, editForm.newPassword, editForm.confirmPassword]);
 
   const getRoleLabel = (role: string) => {
     const roleInfo = userRoles.find((r) => r.value === role);
@@ -188,18 +200,23 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
   };
 
   const handleChangePassword = async () => {
-    if (!editForm.currentPassword || !editForm.newPassword || !editForm.confirmPassword) {
-      notify.error('Please fill in all password fields');
+    if (!editForm.currentPassword.trim()) {
+      notify.error('Please enter your current password');
       return;
     }
 
-    if (editForm.newPassword !== editForm.confirmPassword) {
-      notify.error('New passwords do not match');
+    const strengthError = validatePasswordStrength(editForm.newPassword);
+    if (strengthError) {
+      notify.error(strengthError);
       return;
     }
 
-    if (editForm.newPassword.length < 8) {
-      notify.error('Password must be at least 8 characters');
+    const confirmError = validatePasswordConfirmation(
+      editForm.newPassword,
+      editForm.confirmPassword
+    );
+    if (confirmError) {
+      notify.error(confirmError);
       return;
     }
 
@@ -453,10 +470,14 @@ export function UserProfileDialog({ open, onOpenChange }: UserProfileDialogProps
                       placeholder="Confirm new password"
                     />
                   </div>
+                  <PasswordConfirmFeedback
+                    password={editForm.newPassword}
+                    confirmPassword={editForm.confirmPassword}
+                  />
                   <Button
                     onClick={handleChangePassword}
                     className="w-full"
-                    disabled={isChangingPassword}
+                    disabled={isChangingPassword || !passwordChangeReady}
                   >
                     {isChangingPassword ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />

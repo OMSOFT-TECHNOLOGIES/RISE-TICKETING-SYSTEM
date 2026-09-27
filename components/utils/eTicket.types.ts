@@ -58,4 +58,6 @@ export interface IssueETicketOptions {
   showSuccessToast?: boolean;
   /** Open print dialog for the ticket (default true). */
   printTicket?: boolean;
+  /** Send e-ticket SMS immediately (default false — use Done in booking dialog). */
+  sendSms?: boolean;
 }

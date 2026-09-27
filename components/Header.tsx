@@ -11,6 +11,8 @@ import { QuickActionDialog } from './QuickActionDialog';
 import { SearchDialog } from './SearchDialog';
 import { UserProfileDialog } from './UserProfileDialog';
 import { HelpSupportDialog } from './HelpSupportDialog';
+import { getPageConfig } from './config/pages';
+import { getAccessLevelInfo } from './utils/accessControl';
 import {
   Search,
   Bell,
@@ -33,14 +35,21 @@ import {
 } from './ui/dropdown-menu';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { SidebarTrigger, useSidebar } from './ui/sidebar';
+import { cn } from './ui/utils';
 
 interface HeaderProps {
   onMenuToggle: () => void;
   onSettingsOpen: () => void;
+  currentPage: string;
+  showSettings?: boolean;
 }
 
-export function Header({ onMenuToggle, onSettingsOpen }: HeaderProps) {
-  const { user, logout } = useAuth();
+export function Header({
+  onSettingsOpen,
+  currentPage,
+  showSettings = false,
+}: HeaderProps) {
+  const { user, logout, isSuperAdmin, isAdmin } = useAuth();
   const { theme, setTheme, actualTheme } = useTheme();
   const { isMobile, setOpenMobile } = useSidebar();
   const {
@@ -56,46 +65,40 @@ export function Header({ onMenuToggle, onSettingsOpen }: HeaderProps) {
   const [showProfile, setShowProfile] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
-  const getUserInitials = (name: string) => {
-    return name
+  const pageTitle = showSettings
+    ? 'Settings'
+    : currentPage === 'dashboard'
+      ? 'Home'
+      : getPageConfig(currentPage)?.title ?? 'Dashboard';
+
+  const accessInfo = getAccessLevelInfo(isSuperAdmin, isAdmin, user?.role);
+
+  const getUserInitials = (name: string) =>
+    name
       .split(' ')
       .map((n) => n[0])
       .join('')
-      .toUpperCase();
-  };
+      .toUpperCase()
+      .slice(0, 2);
 
   const toggleTheme = () => {
     const nextTheme = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light';
     setTheme(nextTheme);
-
     const messages = {
       light: 'Light mode enabled',
       dark: 'Dark mode enabled',
       system: 'System theme enabled',
     };
-
     notify.success(messages[nextTheme]);
   };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      setShowSearch(true);
-    }
-  };
-
-  const handleSearchInputClick = () => {
-    setShowSearch(true);
-  };
-
-  const handleQuickAction = () => {
-    setShowQuickAction(true);
+    if (searchQuery.trim()) setShowSearch(true);
   };
 
   const handleMobileMenuToggle = () => {
-    if (isMobile) {
-      setOpenMobile(true);
-    }
+    if (isMobile) setOpenMobile(true);
   };
 
   const handleMarkAllAsRead = () => {
@@ -120,9 +123,7 @@ export function Header({ onMenuToggle, onSettingsOpen }: HeaderProps) {
       await logout();
       notify.success('Logged out successfully');
     } catch {
-      notify.error('Logout failed', {
-        description: 'Please try again.',
-      });
+      notify.error('Logout failed', { description: 'Please try again.' });
     }
   };
 
@@ -131,228 +132,212 @@ export function Header({ onMenuToggle, onSettingsOpen }: HeaderProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto">
-          <div className="flex h-14 items-center justify-between px-4">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="md:hidden h-8 w-8 p-0"
-                onClick={handleMobileMenuToggle}
-              >
-                <Menu className="h-4 w-4" />
-                <span className="sr-only">Toggle mobile menu</span>
-              </Button>
-
-              <div className="hidden md:block">
-                <SidebarTrigger className="h-8 w-8 p-0" />
-              </div>
+      <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
+        <div className="flex h-16 items-center gap-3 px-4 lg:px-6">
+          <div className="flex items-center gap-2 min-w-0 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden h-9 w-9"
+              onClick={handleMobileMenuToggle}
+            >
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Open menu</span>
+            </Button>
+            <div className="hidden md:flex">
+              <SidebarTrigger className="h-9 w-9" />
             </div>
-
-            <div className="flex-1 max-w-md mx-4">
-              <form onSubmit={handleSearch} className="relative">
-                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Search trips, passengers, vehicles..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onClick={handleSearchInputClick}
-                  className="h-8 w-full pl-8 pr-4 text-sm bg-muted/50 border-0 focus:bg-background transition-colors cursor-pointer"
-                  readOnly
-                />
-              </form>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleQuickAction}
-                className="h-8 w-8 p-0 hidden sm:flex"
-                title={
-                  isStationOperationsRole(user?.role)
-                    ? 'Station quick actions'
-                    : user?.role === 'admin' || user?.role === 'super_admin'
-                      ? 'Quick admin actions'
-                      : 'Quick actions'
-                }
-              >
-                <Plus className="h-4 w-4" />
-                <span className="sr-only">Quick action</span>
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleTheme}
-                className="h-8 w-8 p-0 hidden sm:flex"
-                title={`Current: ${theme} (${actualTheme}). Click to cycle through themes`}
-              >
-                {actualTheme === 'dark' ? (
-                  <Sun className="h-4 w-4" />
-                ) : (
-                  <Moon className="h-4 w-4" />
+            <div className="hidden sm:block h-6 w-px bg-border mx-1" />
+            <div className="min-w-0 hidden sm:block">
+              <h1 className="text-base font-semibold tracking-tight truncate leading-tight">
+                {pageTitle}
+              </h1>
+              <p className="text-xs text-muted-foreground truncate flex items-center gap-2">
+                <span className={cn('font-medium', accessInfo.color)}>{accessInfo.label}</span>
+                {user?.stationName && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span>{user.stationName}</span>
+                  </>
                 )}
-                <span className="sr-only">Toggle theme</span>
-              </Button>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 relative"
-                    title="Notifications"
-                  >
-                    <Bell className="h-4 w-4" />
-                    {unreadCount > 0 && (
-                      <Badge
-                        variant="destructive"
-                        className="absolute -top-1 -right-1 h-4 w-4 rounded-full p-0 text-xs flex items-center justify-center border-2 border-background"
-                      >
-                        {unreadCount > 9 ? '9+' : unreadCount}
-                      </Badge>
-                    )}
-                    <span className="sr-only">{unreadCount} notifications</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-80">
-                  <DropdownMenuLabel className="flex items-center justify-between">
-                    <span>Notifications</span>
-                    <div className="flex items-center gap-2">
-                      {unreadCount > 0 && (
-                        <Badge variant="secondary" className="h-5 px-2 text-xs">
-                          {unreadCount} new
-                        </Badge>
-                      )}
-                      {unreadCount > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleMarkAllAsRead}
-                          className="h-5 px-2 text-xs"
-                        >
-                          Mark all read
-                        </Button>
-                      )}
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <div className="max-h-80 overflow-y-auto">
-                    {notifications.length === 0 ? (
-                      <div className="p-4 text-center text-sm text-muted-foreground">
-                        No notifications yet
-                      </div>
-                    ) : (
-                      <div className="space-y-1 p-1">
-                        {notifications.slice(0, 6).map((notification) => (
-                          <button
-                            key={notification.id}
-                            onClick={() => markNotificationAsRead(notification.id)}
-                            className={`w-full text-left p-3 rounded-md hover:bg-accent/50 transition-colors ${
-                              !notification.read ? 'bg-accent/20' : ''
-                            }`}
-                          >
-                            <div className="flex items-start gap-3 text-sm">
-                              <div
-                                className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${getNotificationIcon(notification.type)}`}
-                              />
-                              <div className="flex-1 min-w-0">
-                                <p
-                                  className={`font-medium ${!notification.read ? '' : 'text-muted-foreground'}`}
-                                >
-                                  {notification.title}
-                                </p>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {notification.message}
-                                </p>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {notification.time}
-                                </p>
-                              </div>
-                              {!notification.read && (
-                                <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1.5" />
-                              )}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem className="text-center text-sm cursor-pointer">
-                    View all notifications
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    className="h-8 w-8 p-0 rounded-full"
-                    title={`${displayName} - ${roleLabel}`}
-                  >
-                    <Avatar className="h-7 w-7">
-                      <AvatarFallback className="text-xs bg-primary text-primary-foreground">
-                        {getUserInitials(displayName)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="sr-only">User menu</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">{displayName}</p>
-                      <p className="text-xs text-muted-foreground leading-none">{user?.email}</p>
-                      <Badge variant="outline" className="w-fit text-xs mt-1 capitalize">
-                        {roleLabel}
-                      </Badge>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => setShowProfile(true)}
-                    className="cursor-pointer"
-                  >
-                    <User className="mr-2 h-4 w-4" />
-                    Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onSettingsOpen} className="cursor-pointer">
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setShowHelp(true)}
-                    className="cursor-pointer"
-                  >
-                    <HelpCircle className="mr-2 h-4 w-4" />
-                    Help & Support
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={handleLogout}
-                    className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              </p>
             </div>
           </div>
+
+          <div className="flex-1 flex justify-center max-w-xl mx-auto">
+            <form onSubmit={handleSearch} className="relative w-full hidden md:block">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search trips, passengers, vehicles…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onClick={() => setShowSearch(true)}
+                className="h-10 w-full pl-9 rounded-full bg-muted/60 border-transparent focus-visible:bg-background focus-visible:border-border cursor-pointer shadow-sm"
+                readOnly
+              />
+            </form>
+          </div>
+
+          <div className="flex items-center gap-0.5 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 md:hidden"
+              onClick={() => setShowSearch(true)}
+            >
+              <Search className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 hidden sm:inline-flex rounded-full border-dashed"
+              onClick={() => setShowQuickAction(true)}
+              title={
+                isStationOperationsRole(user?.role)
+                  ? 'Station quick actions'
+                  : 'Quick actions'
+              }
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 hidden sm:inline-flex rounded-full"
+              onClick={toggleTheme}
+              title={`Theme: ${theme}`}
+            >
+              {actualTheme === 'dark' ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-9 w-9 relative rounded-full">
+                  <Bell className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive ring-2 ring-background" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80 rounded-xl">
+                <DropdownMenuLabel className="flex items-center justify-between py-3">
+                  <span>Notifications</span>
+                  {unreadCount > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleMarkAllAsRead}
+                      className="h-7 text-xs"
+                    >
+                      Mark all read
+                    </Button>
+                  )}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <p className="p-6 text-center text-sm text-muted-foreground">
+                      No notifications yet
+                    </p>
+                  ) : (
+                    <div className="p-1 space-y-0.5">
+                      {notifications.slice(0, 6).map((notification) => (
+                        <button
+                          key={notification.id}
+                          type="button"
+                          onClick={() => markNotificationAsRead(notification.id)}
+                          className={cn(
+                            'w-full text-left p-3 rounded-lg hover:bg-muted/80 transition-colors',
+                            !notification.read && 'bg-primary/5'
+                          )}
+                        >
+                          <div className="flex gap-3 text-sm">
+                            <div
+                              className={cn(
+                                'w-2 h-2 rounded-full mt-2 shrink-0',
+                                getNotificationIcon(notification.type)
+                              )}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium truncate">{notification.title}</p>
+                              <p className="text-xs text-muted-foreground line-clamp-2">
+                                {notification.message}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground mt-1">
+                                {notification.time}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="h-9 gap-2 pl-1.5 pr-2 rounded-full ml-1">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="text-xs bg-primary text-primary-foreground">
+                      {getUserInitials(displayName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="hidden lg:inline text-sm font-medium max-w-[120px] truncate">
+                    {displayName.split(' ')[0]}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 rounded-xl">
+                <DropdownMenuLabel>
+                  <p className="text-sm font-medium">{displayName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                  <Badge variant="secondary" className="mt-2 capitalize text-xs font-normal">
+                    {roleLabel}
+                  </Badge>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowProfile(true)}>
+                  <User className="mr-2 h-4 w-4" />
+                  Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onSettingsOpen}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowHelp(true)}>
+                  <HelpCircle className="mr-2 h-4 w-4" />
+                  Help & Support
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => void handleLogout()}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        <div className="sm:hidden px-4 pb-3 -mt-1">
+          <h1 className="text-lg font-semibold">{pageTitle}</h1>
         </div>
       </header>
 
       <QuickActionDialog open={showQuickAction} onOpenChange={setShowQuickAction} />
-
       <SearchDialog open={showSearch} onOpenChange={setShowSearch} initialQuery={searchQuery} />
-
       <UserProfileDialog open={showProfile} onOpenChange={setShowProfile} />
-
       <HelpSupportDialog open={showHelp} onOpenChange={setShowHelp} />
     </>
   );

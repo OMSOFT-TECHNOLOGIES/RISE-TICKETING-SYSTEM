@@ -8,8 +8,12 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
+  --primary: #193cb8;
+  --primary-foreground: #ffffff;
+  --rise-brand: #193cb8;
+  --rise-brand-deep: #0f2a6e;
+  --rise-accent: #22c55e;
+  --rise-surface: #f4f6fb;
   --secondary: oklch(0.95 0.0058 264.53);
   --secondary-foreground: #030213;
   --muted: #ececf0;
@@ -33,8 +37,8 @@
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: #193cb8;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
@@ -72,8 +76,8 @@
     --chart-5: oklch(0.769 0.188 70.08);
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: #030213;
-    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-primary: #193cb8;
+    --sidebar-primary-foreground: #ffffff;
     --sidebar-accent: oklch(0.97 0 0);
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
@@ -127,8 +131,12 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
+  --primary: #193cb8;
+  --primary-foreground: #ffffff;
+  --rise-brand: #193cb8;
+  --rise-brand-deep: #0f2a6e;
+  --rise-accent: #22c55e;
+  --rise-surface: #f4f6fb;
   --secondary: oklch(0.95 0.0058 264.53);
   --secondary-foreground: #030213;
   --muted: #ececf0;
@@ -149,8 +157,8 @@
   --chart-5: oklch(0.769 0.188 70.08);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: #193cb8;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
@@ -185,7 +193,7 @@
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: #3b82f6;
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
@@ -570,4 +578,49 @@ input {
 
 [data-sonner-toast][data-type='info'] [data-icon] {
   color: #193cb8;
+}
+
+.rise-dashboard-hero {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rise-brand) 8%, var(--card)) 0%,
+    var(--card) 45%,
+    color-mix(in srgb, var(--rise-accent) 6%, var(--card)) 100%
+  );
+}
+
+.dark .rise-dashboard-hero {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rise-brand-deep) 55%, var(--card)) 0%,
+    var(--card) 50%,
+    color-mix(in srgb, var(--rise-brand) 25%, var(--background)) 100%
+  );
+}
+
+.rise-dashboard-hero-grid {
+  background-image: linear-gradient(rgba(25, 60, 184, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(25, 60, 184, 0.06) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(to bottom, black 30%, transparent 95%);
+}
+
+.dark .rise-dashboard-hero-grid {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+}
+
+.rise-auth-mesh {
+  background-color: #0a1020;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(37, 99, 235, 0.45), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 90% 80%, rgba(34, 197, 94, 0.12), transparent 50%),
+    linear-gradient(165deg, #0a1020 0%, #0f2a6e 45%, #0c1222 100%);
+}
+
+.rise-auth-grid {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
 }

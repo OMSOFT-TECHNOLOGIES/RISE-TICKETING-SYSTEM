@@ -1,9 +1,16 @@
 import {
+  isHospitalIncidentClaimerPage,
+  isIncidentInvestigatorPage,
   isSafetyIncidentPage,
   isStationManagerPage,
   isStationWorkerPage,
   type PageConfig,
 } from '../config/pages';
+import {
+  isDistrictIncidentReporterRole,
+  isHospitalIncidentClaimerRole,
+  isIncidentInvestigatorRole,
+} from '../constants/userRoles';
 
 type PermissionChecker = (permission: string) => boolean;
 
@@ -13,8 +20,6 @@ export function canViewNavItem(
   hasPermission: PermissionChecker,
   userRole?: string
 ): boolean {
-  const isIncidentReporter = userRole === 'district_incident_reporter';
-
   if (userRole === 'station_worker') {
     return isStationWorkerPage(item.id);
   }
@@ -23,7 +28,15 @@ export function canViewNavItem(
     return isStationManagerPage(item.id);
   }
 
-  if (isIncidentReporter && isSafetyIncidentPage(item.id)) {
+  if (isIncidentInvestigatorRole(userRole)) {
+    return isIncidentInvestigatorPage(item.id);
+  }
+
+  if (isHospitalIncidentClaimerRole(userRole)) {
+    return isHospitalIncidentClaimerPage(item.id);
+  }
+
+  if (isDistrictIncidentReporterRole(userRole) && isSafetyIncidentPage(item.id)) {
     return true;
   }
 
@@ -40,7 +53,12 @@ export function canViewNavItem(
     case 'unions':
       return hasPermission('manage_unions');
     case 'incident-claims':
-      return hasPermission('manage_claims');
+      return (
+        hasPermission('manage_claims') ||
+        hasPermission('submit_claims') ||
+        hasPermission('approve_claims') ||
+        hasPermission('view_claims')
+      );
     case 'death-traps':
       return hasPermission('view_death_traps') || hasPermission('create_death_trap_reports');
     case 'stations':
@@ -70,13 +88,15 @@ export function isNavItemRestricted(
     return false;
   }
 
-  const isIncidentReporter = userRole === 'district_incident_reporter';
-
   if (userRole === 'station_worker' || userRole === 'station_manager') {
     return false;
   }
 
-  if (isIncidentReporter && isSafetyIncidentPage(item.id)) {
+  if (isIncidentInvestigatorRole(userRole) && isIncidentInvestigatorPage(item.id)) {
+    return false;
+  }
+
+  if (isDistrictIncidentReporterRole(userRole) && isSafetyIncidentPage(item.id)) {
     return false;
   }
 
@@ -86,14 +106,16 @@ export function isNavItemRestricted(
     case 'unions':
       return !hasPermission('manage_unions');
     case 'incident-claims':
-      return !hasPermission('manage_claims') && !isIncidentReporter;
+      return (
+        !hasPermission('manage_claims') && !isDistrictIncidentReporterRole(userRole)
+      );
     case 'accounts':
       return !hasPermission('view_revenue');
     case 'death-traps':
       return (
         !hasPermission('view_death_traps') &&
         !hasPermission('create_death_trap_reports') &&
-        !isIncidentReporter
+        !isDistrictIncidentReporterRole(userRole)
       );
     default:
       return false;
