@@ -43,12 +43,21 @@ export function DashboardChartsSection({
     );
   }
 
+  const emptyChartMessage = (
+    <div className="flex flex-col items-center justify-center h-[280px] text-center px-4">
+      <p className="text-sm font-medium">No data for this period</p>
+      <p className="text-xs text-muted-foreground mt-1">
+        Trips, tickets, and revenue in the selected range will appear here.
+      </p>
+    </div>
+  );
+
   if (!hasChartRows && !hasRegions) {
     return (
       <div className="rounded-xl border bg-card px-5 py-10 text-center shadow-sm">
         <p className="text-sm font-medium">No chart data yet</p>
         <p className="text-xs text-muted-foreground mt-1">
-          Analytics will appear when trip and revenue records are available.
+          Analytics come from trips, passenger tickets, and completed revenue transactions.
         </p>
       </div>
     );
@@ -64,6 +73,9 @@ export function DashboardChartsSection({
         <div className="p-4 sm:p-5 grid grid-cols-1 xl:grid-cols-2 gap-6">
           <div>
             <p className="text-xs font-medium text-muted-foreground mb-3">Trips & revenue</p>
+            {!hasChartRows ? (
+              emptyChartMessage
+            ) : (
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
@@ -91,9 +103,13 @@ export function DashboardChartsSection({
                 />
               </LineChart>
             </ResponsiveContainer>
+            )}
           </div>
           <div>
             <p className="text-xs font-medium text-muted-foreground mb-3">Passenger traffic</p>
+            {!hasChartRows ? (
+              emptyChartMessage
+            ) : (
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
@@ -103,6 +119,7 @@ export function DashboardChartsSection({
                 <Bar dataKey="passengers" fill="#193cb8" radius={[4, 4, 0, 0]} name="Passengers" />
               </BarChart>
             </ResponsiveContainer>
+            )}
           </div>
         </div>
       </div>
@@ -113,6 +130,10 @@ export function DashboardChartsSection({
           <h3 className="text-sm font-semibold">Regional distribution</h3>
         </div>
         <div className="p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+          {!hasRegions ? (
+            emptyChartMessage
+          ) : (
+          <>
           <ResponsiveContainer width="100%" height={280}>
             <PieChart>
               <Pie
@@ -159,14 +180,15 @@ export function DashboardChartsSection({
                   <span className="truncate">{region.name}</span>
                 </span>
                 <span className="font-medium tabular-nums shrink-0 text-xs text-muted-foreground">
-                  {region.trips != null ? `${region.trips} trips` : `${region.value}%`}
+                  {region.trips != null
+                    ? `${region.trips} trips${region.share != null ? ` · ${region.share}%` : ''}`
+                    : `${region.value}`}
                 </span>
               </li>
             ))}
-            {regionData.length === 0 && (
-              <li className="text-sm text-muted-foreground text-center py-6">No regional data</li>
-            )}
           </ul>
+          </>
+          )}
         </div>
       </div>
     </div>

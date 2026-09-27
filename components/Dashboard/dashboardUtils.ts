@@ -11,6 +11,7 @@ export type RegionPoint = {
   name: string;
   value: number;
   trips?: number;
+  share?: number;
   color?: string;
 };
 
@@ -42,7 +43,7 @@ export function normalizeChartData(data: unknown): ChartPoint[] {
       name: shortName || '—',
       trips,
       revenue: Number(row.revenue ?? 0),
-      passengers: Number(row.passengers ?? Math.round(trips * 14)),
+      passengers: Number(row.passengers ?? 0),
     };
   });
 }
@@ -57,18 +58,14 @@ export function normalizeRegionData(data: unknown): RegionPoint[] {
   return rows.map((item, index) => {
     const row = item as Record<string, unknown>;
     const trips = Number(row.trips ?? 0);
-    const explicitValue = row.value != null ? Number(row.value) : null;
-    const share =
-      explicitValue != null
-        ? explicitValue
-        : totalTrips > 0
-          ? Math.round((trips / totalTrips) * 100)
-          : 0;
+    const share = totalTrips > 0 ? Math.round((trips / totalTrips) * 100) : 0;
+    const sliceSize = trips > 0 ? trips : Number(row.value ?? 0);
 
     return {
       name: String(row.region ?? row.name ?? 'Unknown'),
-      value: share,
+      value: sliceSize,
       trips: trips || undefined,
+      share: share || undefined,
       color: (row.color as string | undefined) ?? REGION_COLORS[index % REGION_COLORS.length],
     };
   });
