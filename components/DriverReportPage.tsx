@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Loader2, Shield } from 'lucide-react';
+import { AlertTriangle, Shield } from 'lucide-react';
+import { RisePreloader } from './shared/feedback';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
@@ -91,9 +92,7 @@ export function DriverReportPage({ token }: DriverReportPageProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30">
-        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
-      </div>
+      <RisePreloader variant="fullscreen" label="Loading report form…" showBrand />
     );
   }
 

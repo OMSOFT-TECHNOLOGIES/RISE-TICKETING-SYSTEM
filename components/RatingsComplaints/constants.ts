@@ -10,4 +10,4 @@ export const COMPLAINT_CATEGORIES = [
 ] as const;
 
 export const FEEDBACK_TAB_TRIGGER_CLASS =
-  'rounded-md py-2.5 text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=active]:bg-amber-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:font-semibold data-[state=active]:ring-1 data-[state=active]:ring-amber-700/40';
+  'justify-center gap-1.5 px-2 sm:px-3 text-xs sm:text-sm font-medium';

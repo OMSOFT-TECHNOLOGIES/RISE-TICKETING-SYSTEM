@@ -26,7 +26,33 @@ export const userRoles = [
     description: 'Full management of an assigned station',
   },
   { value: 'station_worker', label: 'Station Worker', description: 'Station-level operations' },
+  { value: 'mttd', label: 'MTTD', description: 'Verify citizen reports and respond to confirmed incidents' },
+  { value: 'fire_service', label: 'Fire Service', description: 'Fire emergency verification and response' },
+  { value: 'police', label: 'Ghana Police Service', description: 'Police verification and incident response' },
+  {
+    value: 'road_safety_center',
+    label: 'Road Safety Center',
+    description: 'National Road Safety verification and response',
+  },
+  {
+    value: 'road_safety_manager',
+    label: 'Road Safety Manager',
+    description: 'District road safety: incident analysis and death trap management',
+  },
+  {
+    value: 'ambulance_service',
+    label: 'Ambulance Service',
+    description: 'Ambulance verification and medical response',
+  },
 ];
+
+export const EMERGENCY_SERVICE_ROLES = [
+  'mttd',
+  'fire_service',
+  'police',
+  'road_safety_center',
+  'ambulance_service',
+] as const;
 
 /** Roles that must be assigned to a specific station */
 export const STATION_BOUND_ROLES = ['station_worker', 'station_manager'] as const;
@@ -52,4 +78,12 @@ export function isHospitalIncidentClaimerRole(role?: string): boolean {
 
 export function isDistrictIncidentReporterRole(role?: string): boolean {
   return role === 'district_incident_reporter';
+}
+
+export function isEmergencyServiceRole(role?: string): boolean {
+  return EMERGENCY_SERVICE_ROLES.includes(role as (typeof EMERGENCY_SERVICE_ROLES)[number]);
+}
+
+export function isRoadSafetyManagerRole(role?: string): boolean {
+  return role === 'road_safety_manager';
 }

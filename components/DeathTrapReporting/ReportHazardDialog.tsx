@@ -1,18 +1,22 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   AlertTriangle,
   Check,
   CheckCircle,
   ChevronLeft,
   ChevronRight,
+  ImagePlus,
   MapPin,
   RotateCcw,
+  Video,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
@@ -34,9 +38,12 @@ export interface HazardReportForm {
   description: string;
   severityLevel: DeathTrapReport['severityLevel'];
   affectedRoutes: string[];
+  affectedNotes: string;
   estimatedRepairCost: number;
   coordinates: { lat: number; lng: number };
   locationAddress: string;
+  reporterName?: string;
+  reporterPhone?: string;
 }
 
 interface ReportHazardDialogProps {
@@ -48,14 +55,16 @@ interface ReportHazardDialogProps {
   onFormChange: (updates: Partial<HazardReportForm>) => void;
   onLocationSelect: (location: { lat: number; lng: number; address?: string }) => void;
   onResetLocation: () => void;
-  onSubmit: () => void;
+  onSubmit: (media: { photos: File[]; videos: File[] }) => void;
   onCancel: () => void;
+  publicMode?: boolean;
+  isSubmitting?: boolean;
 }
 
 const STEPS = [
   { id: 1, title: 'Hazard Details', description: 'Type, severity & description' },
   { id: 2, title: 'Location', description: 'Pin exact hazard on map' },
-  { id: 3, title: 'Impact', description: 'Routes & estimated cost' },
+  { id: 3, title: 'Impact & media', description: 'Notes, photos & video (optional)' },
 ];
 
 export function ReportHazardDialog({
@@ -69,11 +78,21 @@ export function ReportHazardDialog({
   onResetLocation,
   onSubmit,
   onCancel,
+  publicMode = false,
+  isSubmitting = false,
 }: ReportHazardDialogProps) {
   const [step, setStep] = useState(1);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [videoFiles, setVideoFiles] = useState<File[]>([]);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   const handleOpenChange = (next: boolean) => {
-    if (!next) setStep(1);
+    if (!next) {
+      setStep(1);
+      setPhotoFiles([]);
+      setVideoFiles([]);
+    }
     onOpenChange(next);
   };
 
@@ -85,16 +104,19 @@ export function ReportHazardDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex max-w-3xl flex-col gap-0 p-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-red-50 border border-red-200/60 p-2.5 shrink-0">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
-            </div>
-            <div>
-              <DialogTitle>Report Death Trap / Road Hazard</DialogTitle>
-              <DialogDescription className="mt-1">
-                File a structured hazard report for triage, routing impact assessment, and repair coordination.
+      <DialogContent className="flex max-w-3xl flex-col gap-0 p-0 overflow-hidden rounded-2xl max-h-[min(90dvh,calc(100%-2rem))]">
+        <DialogHeader className="border-b border-border/80 bg-gradient-to-br from-muted/50 to-background px-6 py-5 shrink-0">
+          <div className="flex items-start gap-4 pr-6">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/20">
+              <AlertTriangle className="h-5 w-5" strokeWidth={2.25} />
+            </span>
+            <div className="space-y-1 min-w-0">
+              <DialogTitle className="text-xl font-semibold tracking-tight">
+                Report road hazard
+              </DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed">
+                File a structured death trap report for triage, routing impact assessment, and repair
+                coordination.
               </DialogDescription>
             </div>
           </div>
@@ -108,29 +130,29 @@ export function ReportHazardDialog({
                   <div
                     className={cn(
                       'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-medium border-2 transition-colors',
-                      step > s.id && 'bg-[#193cb8] border-[#193cb8] text-white',
-                      step === s.id && 'border-[#193cb8] text-[#193cb8] bg-[#193cb8]/5',
+                      step > s.id && 'bg-primary border-primary text-primary-foreground',
+                      step === s.id && 'border-primary text-primary bg-primary/5',
                       step < s.id && 'border-muted-foreground/30 text-muted-foreground'
                     )}
                   >
                     {step > s.id ? <Check className="h-3.5 w-3.5" /> : s.id}
                   </div>
                   <div className="hidden sm:block min-w-0">
-                    <p className={cn('text-xs font-medium truncate', step === s.id && 'text-[#193cb8]')}>
+                    <p className={cn('text-xs font-medium truncate', step === s.id && 'text-primary')}>
                       {s.title}
                     </p>
                     <p className="text-[10px] text-muted-foreground truncate">{s.description}</p>
                   </div>
                 </div>
                 {idx < STEPS.length - 1 && (
-                  <div className={cn('flex-1 h-px mx-2', step > s.id ? 'bg-[#193cb8]' : 'bg-border')} />
+                  <div className={cn('flex-1 h-px mx-2', step > s.id ? 'bg-primary' : 'bg-border')} />
                 )}
               </React.Fragment>
             ))}
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
+        <DialogBody className="min-h-0 flex-1 px-6 py-5 max-h-[min(52vh,480px)]">
           {step === 1 && (
             <div className="space-y-6">
               <div className="space-y-3">
@@ -144,16 +166,16 @@ export function ReportHazardDialog({
                       type="button"
                       onClick={() => onFormChange({ type: value })}
                       className={cn(
-                        'flex flex-col items-start gap-2 rounded-lg border p-3 text-left transition-all hover:border-[#193cb8]/40',
+                        'flex flex-col items-start gap-2 rounded-lg border p-3 text-left transition-all hover:border-primary/40',
                         form.type === value
-                          ? 'border-[#193cb8] bg-[#193cb8]/5 ring-1 ring-[#193cb8]/20'
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
                           : 'border-border bg-background'
                       )}
                     >
                       <Icon
                         className={cn(
                           'h-4 w-4',
-                          form.type === value ? 'text-[#193cb8]' : 'text-muted-foreground'
+                          form.type === value ? 'text-primary' : 'text-muted-foreground'
                         )}
                       />
                       <div>
@@ -248,6 +270,7 @@ export function ReportHazardDialog({
               <MapLocationPicker
                 onLocationSelect={onLocationSelect}
                 initialLocation={hasCoordinates ? form.coordinates : DEFAULT_MAP_CENTER}
+                compactHeightClass="h-52 sm:h-72"
               />
 
               {hasCoordinates && (
@@ -300,36 +323,87 @@ export function ReportHazardDialog({
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="affected-routes">Affected Routes</Label>
-                <Input
-                  id="affected-routes"
-                  value={form.affectedRoutes.join(', ')}
-                  onChange={(e) =>
-                    onFormChange({
-                      affectedRoutes: e.target.value
-                        .split(',')
-                        .map((route) => route.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                  placeholder="e.g. Accra–Kumasi, Tema–Kumasi"
-                />
-                <p className="text-xs text-muted-foreground">Separate multiple routes with commas</p>
-              </div>
+              {publicMode ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="reporter-name">Your name (optional)</Label>
+                    <Input
+                      id="reporter-name"
+                      value={form.reporterName ?? ''}
+                      onChange={(e) => onFormChange({ reporterName: e.target.value })}
+                      placeholder="Citizen reporter"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="reporter-phone">Phone (optional)</Label>
+                    <Input
+                      id="reporter-phone"
+                      value={form.reporterPhone ?? ''}
+                      onChange={(e) => onFormChange({ reporterPhone: e.target.value })}
+                      placeholder="For follow-up if needed"
+                    />
+                  </div>
+                </div>
+              ) : null}
 
               <div className="space-y-2">
-                <Label htmlFor="repair-cost">Estimated Repair Cost (GH₵)</Label>
-                <Input
-                  id="repair-cost"
-                  type="number"
-                  min={0}
-                  value={form.estimatedRepairCost || ''}
-                  onChange={(e) =>
-                    onFormChange({ estimatedRepairCost: parseFloat(e.target.value) || 0 })
-                  }
-                  placeholder="0"
+                <Label htmlFor="affected-notes">Affected areas / notes</Label>
+                <Textarea
+                  id="affected-notes"
+                  rows={5}
+                  value={form.affectedNotes}
+                  onChange={(e) => onFormChange({ affectedNotes: e.target.value })}
+                  placeholder="Describe who or what is affected. You can write several sentences with spaces — e.g. school children, market traders, northbound lane closure..."
                 />
+              </div>
+
+              <div className="space-y-3">
+                <Label>Photos &amp; video (optional)</Label>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) =>
+                      setPhotoFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])])
+                    }
+                  />
+                  <input
+                    ref={videoInputRef}
+                    type="file"
+                    accept="video/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) =>
+                      setVideoFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])])
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => photoInputRef.current?.click()}
+                  >
+                    <ImagePlus className="h-4 w-4 mr-2" />
+                    Add photos
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => videoInputRef.current?.click()}
+                  >
+                    <Video className="h-4 w-4 mr-2" />
+                    Add video
+                  </Button>
+                </div>
+                {(photoFiles.length > 0 || videoFiles.length > 0) && (
+                  <p className="text-xs text-muted-foreground">
+                    {photoFiles.length} photo(s), {videoFiles.length} video(s) selected
+                  </p>
+                )}
               </div>
 
               <div className="rounded-lg border p-4">
@@ -340,13 +414,13 @@ export function ReportHazardDialog({
                     </p>
                     <p className="text-2xl font-semibold tabular-nums mt-1">{priorityScore}/100</p>
                   </div>
-                  <div className="h-12 w-12 rounded-full border-4 border-[#193cb8]/20 flex items-center justify-center">
-                    <span className="text-sm font-bold text-[#193cb8]">{priorityScore}</span>
+                  <div className="h-12 w-12 rounded-full border-4 border-primary/20 flex items-center justify-center">
+                    <span className="text-sm font-bold text-primary">{priorityScore}</span>
                   </div>
                 </div>
                 <div className="mt-3 h-1.5 w-full rounded-full bg-muted overflow-hidden">
                   <div
-                    className="h-full bg-[#193cb8] transition-all"
+                    className="h-full bg-primary transition-all"
                     style={{ width: `${priorityScore}%` }}
                   />
                 </div>
@@ -356,9 +430,9 @@ export function ReportHazardDialog({
               </div>
             </div>
           )}
-        </div>
+        </DialogBody>
 
-        <div className="flex items-center justify-between px-6 py-4 border-t bg-muted/10 shrink-0">
+        <DialogFooter className="flex-row items-center justify-between gap-2 sm:justify-between bg-muted/20 shrink-0">
           <Button variant="ghost" onClick={step === 1 ? onCancel : () => setStep((s) => s - 1)}>
             {step === 1 ? (
               'Cancel'
@@ -370,18 +444,20 @@ export function ReportHazardDialog({
           </Button>
           {step < 3 ? (
             <Button
-              className="bg-[#193cb8] hover:bg-[#152f94]"
               disabled={(step === 1 && !canProceedStep1) || (step === 2 && !canProceedStep2)}
               onClick={() => setStep((s) => s + 1)}
             >
               Continue <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           ) : (
-            <Button className="bg-[#193cb8] hover:bg-[#152f94]" onClick={onSubmit}>
-              Submit Report
+            <Button
+              disabled={isSubmitting}
+              onClick={() => onSubmit({ photos: photoFiles, videos: videoFiles })}
+            >
+              {isSubmitting ? 'Submitting…' : 'Submit report'}
             </Button>
           )}
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

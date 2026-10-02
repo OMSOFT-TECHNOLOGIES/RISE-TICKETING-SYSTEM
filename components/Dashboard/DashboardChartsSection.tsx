@@ -65,7 +65,7 @@ export function DashboardChartsSection({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+      <div className="rounded-2xl border bg-card/80 backdrop-blur-sm shadow-sm overflow-hidden ring-1 ring-border/50">
         <div className="flex items-center gap-2 border-b px-5 py-3.5">
           <BarChart3 className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold">Operations analytics</h3>
@@ -124,7 +124,7 @@ export function DashboardChartsSection({
         </div>
       </div>
 
-      <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+      <div className="rounded-2xl border bg-card/80 backdrop-blur-sm shadow-sm overflow-hidden ring-1 ring-border/50">
         <div className="flex items-center gap-2 border-b px-5 py-3.5">
           <PieChartIcon className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold">Regional distribution</h3>

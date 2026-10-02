@@ -48,7 +48,12 @@ export const incidentClaimApi = {
 
   investigatorReview: async (
     id: string,
-    data: { approved: boolean; notes?: string }
+    data: {
+      approved: boolean;
+      notes?: string;
+      claimantBiometricMatched?: boolean;
+      investigatorBiometricReference: string;
+    }
   ): Promise<ApiResponse> => {
     return apiRequest(`/api/incident-claims/${id}/investigator-review`, {
       method: 'PATCH',

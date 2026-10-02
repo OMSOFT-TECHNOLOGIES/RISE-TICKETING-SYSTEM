@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, MoreHorizontal } from 'lucide-react';
+import { ArrowUpRight, MoreHorizontal, ShieldAlert } from 'lucide-react';
 import { Button } from '../../ui/button';
 import {
   DropdownMenu,
@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '../../ui/dropdown-menu';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
+import { ScrollableTable } from '../../shared/ScrollableTable';
 import type { Incident } from '../types';
 import { formatIncidentDate, formatRelativeTime, formatTypeLabel } from '../utils';
 import { SeverityIndicator } from './SeverityIndicator';
@@ -23,9 +24,7 @@ export function IncidentTable({ incidents, canManage, onView }: IncidentTablePro
   if (incidents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-        <div className="rounded-full bg-muted p-4 mb-4">
-          <ArrowUpRight className="h-6 w-6 text-muted-foreground" />
-        </div>
+        <ShieldAlert className="h-10 w-10 text-muted-foreground/50 mb-3" />
         <p className="font-medium">No incidents match your criteria</p>
         <p className="text-sm text-muted-foreground mt-1 max-w-sm">
           Try adjusting filters or report a new incident to begin tracking.
@@ -35,10 +34,14 @@ export function IncidentTable({ incidents, canManage, onView }: IncidentTablePro
   }
 
   return (
-    <div className="overflow-x-auto">
+    <ScrollableTable
+      className="border-0 shadow-none ring-0"
+      maxHeightClass="max-h-[min(70vh,560px)]"
+      minWidthClass="min-w-[1000px]"
+    >
       <Table>
         <TableHeader>
-          <TableRow className="hover:bg-transparent border-b bg-muted/30">
+          <TableRow className="hover:bg-transparent">
             <TableHead className="w-[130px] text-xs font-semibold uppercase tracking-wide">Case ID</TableHead>
             <TableHead className="min-w-[240px] text-xs font-semibold uppercase tracking-wide">Summary</TableHead>
             <TableHead className="text-xs font-semibold uppercase tracking-wide">Classification</TableHead>
@@ -60,7 +63,7 @@ export function IncidentTable({ incidents, canManage, onView }: IncidentTablePro
                 {incident.id}
               </TableCell>
               <TableCell className="py-4">
-                <p className="font-medium text-sm leading-snug line-clamp-1 group-hover:text-[#193cb8] transition-colors">
+                <p className="font-medium text-sm leading-snug line-clamp-1 group-hover:text-primary transition-colors">
                   {incident.title}
                 </p>
                 <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5 max-w-md">
@@ -103,6 +106,6 @@ export function IncidentTable({ incidents, canManage, onView }: IncidentTablePro
           ))}
         </TableBody>
       </Table>
-    </div>
+    </ScrollableTable>
   );
 }

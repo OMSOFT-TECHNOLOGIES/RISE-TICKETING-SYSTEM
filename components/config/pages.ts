@@ -63,6 +63,17 @@ export const INCIDENT_INVESTIGATOR_PAGES: PageId[] = [
 /** Hospital staff submitting injury claims. */
 export const HOSPITAL_INCIDENT_CLAIMER_PAGES: PageId[] = ['incident-claims'];
 
+/** MTTD, Fire, Police, Road Safety, Ambulance — respond after investigator confirmation. */
+export const EMERGENCY_SERVICE_PAGES: PageId[] = ['incidents'];
+
+/** District road safety manager — incidents, analysis, and death traps. */
+export const ROAD_SAFETY_MANAGER_PAGES: PageId[] = [
+  'dashboard',
+  'incidents',
+  'accident-analysis',
+  'death-traps',
+];
+
 /** Pages accessible to station workers (scoped station operations) */
 export const STATION_WORKER_PAGES: PageId[] = [
   'dashboard',
@@ -295,6 +306,14 @@ export function isIncidentInvestigatorPage(pageId: string): boolean {
 
 export function isHospitalIncidentClaimerPage(pageId: string): boolean {
   return HOSPITAL_INCIDENT_CLAIMER_PAGES.includes(pageId as PageId);
+}
+
+export function isEmergencyServicePage(pageId: string): boolean {
+  return EMERGENCY_SERVICE_PAGES.includes(pageId as PageId);
+}
+
+export function isRoadSafetyManagerPage(pageId: string): boolean {
+  return ROAD_SAFETY_MANAGER_PAGES.includes(pageId as PageId);
 }
 
 export function resolvePageId(page: string): PageId {

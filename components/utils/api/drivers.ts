@@ -8,9 +8,12 @@ export const driverApi = {
     search?: string;
     page?: number;
     limit?: number;
+    /** Trip scheduling: include drivers outside the caller’s region/district. */
+    allRegions?: boolean;
   }): Promise<ApiResponse> => {
     const queryParams = new URLSearchParams();
     if (params?.stationId) queryParams.append('stationId', params.stationId);
+    if (params?.allRegions) queryParams.append('allRegions', 'true');
     if (params?.status && params.status !== 'all') {
       queryParams.append('status', params.status);
     }
@@ -57,8 +60,31 @@ export const driverApi = {
     return apiRequest('/api/drivers/statistics', { method: 'GET' });
   },
 
-  getAvailable: async (stationId?: string): Promise<ApiResponse> => {
-    const queryString = stationId ? `?stationId=${stationId}` : '';
-    return apiRequest(`/api/drivers/available${queryString}`, { method: 'GET' });
+  getAvailable: async (params?: {
+    stationId?: string;
+    allRegions?: boolean;
+  }): Promise<ApiResponse> => {
+    const queryParams = new URLSearchParams();
+    if (params?.stationId) queryParams.append('stationId', params.stationId);
+    if (params?.allRegions) queryParams.append('allRegions', 'true');
+    const queryString = queryParams.toString();
+    return apiRequest(
+      `/api/drivers/available${queryString ? `?${queryString}` : ''}`,
+      { method: 'GET' }
+    );
+  },
+
+  getBookable: async (params?: {
+    search?: string;
+    allRegions?: boolean;
+  }): Promise<ApiResponse> => {
+    const queryParams = new URLSearchParams();
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.allRegions) queryParams.append('allRegions', 'true');
+    const queryString = queryParams.toString();
+    return apiRequest(
+      `/api/drivers/bookable${queryString ? `?${queryString}` : ''}`,
+      { method: 'GET' }
+    );
   },
 };

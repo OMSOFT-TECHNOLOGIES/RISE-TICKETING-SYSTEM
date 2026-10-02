@@ -12,7 +12,7 @@ export function OverviewTab({ ratingDistribution, complaintCategories }: Overvie
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <Card className="border shadow-none">
+      <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 border-0">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold">Rating Distribution</CardTitle>
           <CardDescription>Breakdown of customer ratings</CardDescription>
@@ -45,7 +45,7 @@ export function OverviewTab({ ratingDistribution, complaintCategories }: Overvie
         </CardContent>
       </Card>
 
-      <Card className="border shadow-none">
+      <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 border-0">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold">Complaint Categories</CardTitle>
           <CardDescription>Most common complaint types</CardDescription>

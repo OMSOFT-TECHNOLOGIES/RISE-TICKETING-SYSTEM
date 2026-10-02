@@ -5,37 +5,46 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { useAuth } from './AuthContext';
 import { vehicleApi, driverApi, parseListResponse, formatApiError } from './utils/api';
-import { StationFormSelect } from './shared/StationFormSelect';
 import { isGlobalDataScope } from './utils/stationScope';
 import { formatStationRefId } from './utils/stationPicker';
-import { listParamsForDataEntry } from './utils/stationScope';
+import {
+  deferListUntilStationPicked,
+  emptyPaginatedListPayload,
+  listParamsForDataEntry,
+} from './utils/stationScope';
 import { useDataEntryStation } from './shared/hooks/useDataEntryStation';
 import { DataEntryStationBanner } from './shared/DataEntryStationBanner';
 import { notify } from './utils/notify';
-import { Loader2 } from 'lucide-react';
-import { 
-  Bus, 
-  Plus, 
-  Edit, 
+import {
+  Bus,
+  Plus,
+  Edit,
   Eye,
   Calendar,
   Settings,
-  AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Loader2,
+  RefreshCw,
+  Search,
+  MoreHorizontal,
+  Trash2,
+  UserCheck,
 } from 'lucide-react';
 import { Badge } from './ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
-import { MoreHorizontal, Trash2, UserCheck } from 'lucide-react';
 import { usePageAction } from './context/PageActionContext';
 import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
 import { TablePagination } from './shared/TablePagination';
-
-const vehicleMakes = ['Hyundai', 'Tata', 'Mercedes', 'Isuzu', 'Toyota', 'Ford', 'Volkswagen'];
-const fuelTypes = ['Diesel', 'Petrol', 'CNG', 'Electric'];
+import { ScrollableTable } from './shared/ScrollableTable';
+import { PageHeader } from './shared/PageHeader';
+import { DashboardStatCard } from './Dashboard/DashboardStatCard';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
+import { RegisterVehicleDialog } from './VehicleManagement/RegisterVehicleDialog';
+import { fuelTypes, vehicleMakes, vehicleStatusOptions } from './VehicleManagement/vehicleFormConstants';
 
 function parseOptionalMileage(value: string): number | undefined {
   const trimmed = value.trim();
@@ -52,32 +61,57 @@ function formatMileage(value: unknown): string {
   return `${n.toLocaleString()} km`;
 }
 
+function formatServiceDate(value: unknown): string {
+  if (value == null || value === '') return '—';
+  const d = new Date(value as string | number | Date);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString();
+}
+
 export function VehicleManagement() {
   const { user } = useAuth();
   const { pendingAction, clearAction } = usePageAction();
   const dataEntry = useDataEntryStation();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const fetchVehiclesPage = useCallback(
-    (page: number, limit: number) =>
-      vehicleApi.getAll(
-        listParamsForDataEntry(user, dataEntry.effectiveStationId, { page, limit })
-      ),
-    [user, dataEntry.effectiveStationId]
+    (page: number, limit: number) => {
+      if (deferListUntilStationPicked(user, dataEntry.stationId)) {
+        return Promise.resolve({
+          success: true,
+          data: emptyPaginatedListPayload('vehicles', limit),
+        });
+      }
+      return vehicleApi.getAll(
+        listParamsForDataEntry(user, dataEntry.effectiveStationId, {
+          page,
+          limit,
+          search: searchTerm.trim() || undefined,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+        })
+      );
+    },
+    [user, dataEntry.stationId, dataEntry.effectiveStationId, searchTerm, statusFilter]
   );
 
   const {
     items: vehicles,
     loading,
+    error,
     refresh,
     isSubmitting,
     setIsSubmitting,
     page,
     setPage,
     pagination,
+    pageSize,
+    setPageSize,
   } = usePaginatedEntityList<any>({
     fetchFn: fetchVehiclesPage,
     entityKey: 'vehicles',
     errorMessage: 'Failed to load vehicles',
+    resetPageDeps: [dataEntry.effectiveStationId, searchTerm, statusFilter],
   });
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [registerStationId, setRegisterStationId] = useState('');
@@ -112,7 +146,6 @@ export function VehicleManagement() {
     mileage: '',
   });
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const userVehicles = vehicles;
 
   useEffect(() => {
@@ -208,7 +241,9 @@ export function VehicleManagement() {
     try {
       setDriversLoading(true);
       const params = listParamsForDataEntry(user, dataEntry.effectiveStationId);
-      const response = await driverApi.getAvailable(params?.stationId);
+      const response = await driverApi.getAvailable(
+        params?.stationId ? { stationId: params.stationId } : undefined
+      );
       if (response.success && response.data) {
         const list = Array.isArray(response.data)
           ? response.data
@@ -361,16 +396,30 @@ export function VehicleManagement() {
     }
   };
 
+  const totalVehicles = pagination?.totalItems ?? userVehicles.length;
+  const activeCount = userVehicles.filter((v) => v.status === 'active').length;
+  const maintenanceCount = userVehicles.filter((v) => v.status === 'maintenance').length;
+  const unassignedCount = userVehicles.filter((v) => !v.driverName && !v.driverId).length;
+
+  const pageDescription = isGlobalUser
+    ? 'Fleet registry, assignments, and maintenance status across RISE stations.'
+    : `Vehicles for ${user?.stationName ?? 'your station'} — registration, drivers, and service dates.`;
+
+  const awaitingStationPick =
+    dataEntry.needsPicker && deferListUntilStationPicked(user, dataEntry.stationId);
+
   const VehicleCard = ({ vehicle }: { vehicle: any }) => (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center space-x-2">
-              <Bus className="h-5 w-5" />
-              <span>{vehicle.registrationNumber}</span>
+    <Card className="rounded-xl ring-1 ring-border/50 shadow-sm">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Bus className="h-4 w-4 text-primary shrink-0" />
+              <span className="truncate font-mono">{vehicle.registrationNumber}</span>
             </CardTitle>
-            <p className="text-sm text-gray-600">{vehicle.make} {vehicle.model} ({vehicle.year})</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {vehicle.make} {vehicle.model} ({vehicle.year})
+            </p>
           </div>
           {getStatusBadge(vehicle.status)}
         </div>
@@ -378,29 +427,27 @@ export function VehicleManagement() {
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <p className="font-medium text-gray-700">Capacity</p>
-            <p>{vehicle.capacity} passengers</p>
+            <p className="font-medium text-muted-foreground">Capacity</p>
+            <p>{vehicle.capacity} seats</p>
           </div>
           <div>
-            <p className="font-medium text-gray-700">Fuel Type</p>
+            <p className="font-medium text-muted-foreground">Fuel</p>
             <p>{vehicle.fuelType}</p>
           </div>
           <div>
-            <p className="font-medium text-gray-700">Mileage</p>
+            <p className="font-medium text-muted-foreground">Mileage</p>
             <p>{formatMileage(vehicle.mileage)}</p>
           </div>
           <div>
-            <p className="font-medium text-gray-700">Current Driver</p>
+            <p className="font-medium text-muted-foreground">Driver</p>
             <p>{vehicle.driverName || 'Unassigned'}</p>
           </div>
         </div>
 
         <div className="flex items-center justify-between pt-4 border-t">
-          <div className="text-sm">
-            <div className="flex items-center space-x-1">
-              <Calendar className="h-4 w-4" style={{ color: '#193cb8' }} />
-              <span>Next service: {new Date(vehicle.nextMaintenance).toLocaleDateString()}</span>
-            </div>
+          <div className="text-sm text-muted-foreground flex items-center gap-1">
+            <Calendar className="h-4 w-4 text-primary" />
+            <span>Next service: {formatServiceDate(vehicle.nextMaintenance)}</span>
           </div>
           <div className="flex space-x-2">
             <Button variant="outline" size="sm" onClick={() => handleEditClick(vehicle)}>
@@ -415,17 +462,17 @@ export function VehicleManagement() {
     </Card>
   );
 
-  // Show loading state
-  if (loading) {
+  if (loading && userVehicles.length === 0 && !error && !awaitingStationPick) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="h-8 w-8 animate-spin" style={{ color: '#193cb8' }} />
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading vehicles…" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="min-h-full rise-dashboard-page">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       {dataEntry.needsPicker && (
         <DataEntryStationBanner
           stationId={dataEntry.stationId}
@@ -434,253 +481,268 @@ export function VehicleManagement() {
           loading={dataEntry.loading}
           loadError={dataEntry.loadError}
           onRetry={() => void dataEntry.reloadStations()}
+          description={dataEntry.pickerDescription}
         />
       )}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">
-            {isAdmin ? 'All Vehicles' : 'My Vehicles'}
-          </h1>
-          <p className="text-gray-600">
-            {isAdmin 
-              ? 'Manage all vehicles across RISE stations' 
-              : `Manage vehicles for ${user?.stationName}`
-            }
-          </p>
-        </div>
-        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Register Vehicle
+
+      <PageHeader
+        title="Vehicle management"
+        description={pageDescription}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refresh({ toastOnError: true })}
+              disabled={loading || awaitingStationPick}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
             </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Register New Vehicle</DialogTitle>
-              <DialogDescription>
-                Register vehicle details now. Mileage is optional. Assign a driver later from the
-                vehicle actions menu.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              {(dataEntry.needsPicker || isGlobalUser) && (
-                <StationFormSelect
-                  value={registerStationId}
-                  stations={dataEntry.stations}
-                  onChange={setRegisterStationId}
-                />
-              )}
-              <div>
-                <Label htmlFor="regNumber">Registration Number</Label>
-                <Input
-                  id="regNumber"
-                  value={newVehicle.registrationNumber}
-                  onChange={(e) => setNewVehicle({...newVehicle, registrationNumber: e.target.value})}
-                  placeholder="e.g., GV-123-20"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="make">Make</Label>
-                  <Select value={newVehicle.make} onValueChange={(value) => setNewVehicle({...newVehicle, make: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select make" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vehicleMakes.map((make) => (
-                        <SelectItem key={make} value={make}>{make}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="model">Model</Label>
+            <Button
+              className="shadow-sm"
+              disabled={awaitingStationPick}
+              onClick={() => setShowAddDialog(true)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Register vehicle
+            </Button>
+          </>
+        }
+      />
+
+      {error ? (
+        <RiseStatusAlert type="error" title="Could not load vehicles">
+          {error}
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => void refresh({ toastOnError: true })}
+          >
+            Try again
+          </Button>
+        </RiseStatusAlert>
+      ) : null}
+
+      {!awaitingStationPick ? (
+        <section className="rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm p-4 sm:p-5 ring-1 ring-border/40">
+          <h2 className="text-sm font-semibold tracking-tight mb-4">Overview</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+            <DashboardStatCard
+              title="Vehicles"
+              value={totalVehicles}
+              icon={Bus}
+              accent="blue"
+              hint="Total in registry"
+            />
+            <DashboardStatCard
+              title="Active"
+              value={activeCount}
+              icon={CheckCircle}
+              accent="emerald"
+              hint="On this page"
+            />
+            <DashboardStatCard
+              title="Maintenance"
+              value={maintenanceCount}
+              icon={Settings}
+              accent="amber"
+              hint="On this page"
+            />
+            <DashboardStatCard
+              title="No driver"
+              value={unassignedCount}
+              icon={UserCheck}
+              accent="violet"
+              hint="On this page"
+            />
+          </div>
+        </section>
+      ) : null}
+
+      <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 overflow-hidden">
+        <CardHeader className="space-y-4 border-b border-border/60 bg-muted/20 pb-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <CardTitle className="text-lg font-semibold">Vehicle registry</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                {awaitingStationPick
+                  ? 'Select a station above to load vehicles'
+                  : `${totalVehicles} vehicle${totalVehicles === 1 ? '' : 's'} · search and filter`}
+              </p>
+            </div>
+            {!awaitingStationPick ? (
+              <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto lg:min-w-[420px]">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    id="model"
-                    value={newVehicle.model}
-                    onChange={(e) => setNewVehicle({...newVehicle, model: e.target.value})}
-                    placeholder="e.g., County"
+                    placeholder="Plate, make, model…"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 h-10 bg-background/80"
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="year">Year</Label>
-                  <Input
-                    id="year"
-                    type="number"
-                    value={newVehicle.year}
-                    onChange={(e) => setNewVehicle({...newVehicle, year: e.target.value})}
-                    placeholder="2024"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="capacity">Capacity</Label>
-                  <Input
-                    id="capacity"
-                    type="number"
-                    value={newVehicle.capacity}
-                    onChange={(e) => setNewVehicle({...newVehicle, capacity: e.target.value})}
-                    placeholder="35"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="fuelType">Fuel Type</Label>
-                <Select value={newVehicle.fuelType} onValueChange={(value) => setNewVehicle({...newVehicle, fuelType: value})}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select fuel type" />
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="h-10 w-full sm:w-[150px] bg-background/80">
+                    <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    {fuelTypes.map((fuel) => (
-                      <SelectItem key={fuel} value={fuel}>{fuel}</SelectItem>
+                    <SelectItem value="all">All status</SelectItem>
+                    {vehicleStatusOptions.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="mileage">Current Mileage (km) — optional</Label>
-                <Input
-                  id="mileage"
-                  type="text"
-                  inputMode="numeric"
-                  value={newVehicle.mileage}
-                  onChange={(e) => setNewVehicle({ ...newVehicle, mileage: e.target.value })}
-                  placeholder="Leave blank if unknown"
-                />
+            ) : null}
+          </div>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
+            {awaitingStationPick ? (
+              <div className="py-16 text-center text-sm text-muted-foreground">
+                Pick a station to view and register vehicles for that terminal.
               </div>
-              <Button 
-                onClick={handleAddVehicle} 
-                className="w-full"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Registering...
-                  </>
-                ) : (
-                  'Register Vehicle'
-                )}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Vehicle Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Bus className="h-8 w-8 mx-auto mb-2" style={{ color: '#193cb8' }} />
-            <p className="text-2xl font-bold">{userVehicles.length}</p>
-            <p className="text-sm text-gray-600">Total Vehicles</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-600" />
-            <p className="text-2xl font-bold">{userVehicles.filter(v => v.status === 'active').length}</p>
-            <p className="text-sm text-gray-600">Active</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Settings className="h-8 w-8 mx-auto mb-2 text-yellow-600" />
-            <p className="text-2xl font-bold">{userVehicles.filter(v => v.status === 'maintenance').length}</p>
-            <p className="text-sm text-gray-600">In Maintenance</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-red-600" />
-            <p className="text-2xl font-bold">{userVehicles.filter(v => v.status === 'inactive').length}</p>
-            <p className="text-sm text-gray-600">Inactive</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Vehicles Table for larger screens */}
-      <div className="hidden lg:block">
-        <Card>
-          <CardHeader>
-            <CardTitle>Vehicle Inventory</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Registration</TableHead>
-                  <TableHead>Vehicle</TableHead>
-                  <TableHead>Capacity</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Driver</TableHead>
-                  <TableHead>Next Service</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {userVehicles.map((vehicle) => (
-                  <TableRow key={vehicle.id}>
-                    <TableCell className="font-medium">{vehicle.registrationNumber}</TableCell>
-                    <TableCell>{vehicle.make} {vehicle.model}</TableCell>
-                    <TableCell>{vehicle.capacity}</TableCell>
-                    <TableCell>{getStatusBadge(vehicle.status)}</TableCell>
-                    <TableCell>{vehicle.driverName || 'Unassigned'}</TableCell>
-                    <TableCell>{new Date(vehicle.nextMaintenance).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleViewVehicle(vehicle)}>
-                            <Eye className="h-4 w-4 mr-2" />
-                            View Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleEditClick(vehicle)}>
-                            <Edit className="h-4 w-4 mr-2" />
-                            Edit Vehicle
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openAssignDriver(vehicle)}>
-                            <UserCheck className="h-4 w-4 mr-2" />
-                            Assign Driver
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem 
-                            onClick={() => handleDeleteClick(vehicle)}
-                            className="text-red-600"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            ) : userVehicles.length === 0 ? (
+              <div className="py-16 text-center">
+                <Bus className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                <p className="text-sm font-medium">No vehicles found</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                  {searchTerm.trim() || statusFilter !== 'all'
+                    ? 'Adjust filters or clear search.'
+                    : 'Register a vehicle to add it to the fleet.'}
+                </p>
+                {!searchTerm.trim() && statusFilter === 'all' ? (
+                  <Button className="mt-4" onClick={() => setShowAddDialog(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Register vehicle
+                  </Button>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                <div className="hidden lg:block">
+                  <ScrollableTable
+                    className="border-0 shadow-none ring-0"
+                    maxHeightClass="max-h-[min(70vh,560px)]"
+                    minWidthClass="min-w-[960px]"
+                  >
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead>Registration</TableHead>
+                          <TableHead>Vehicle</TableHead>
+                          <TableHead>Capacity</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Driver</TableHead>
+                          <TableHead>Next service</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {userVehicles.map((vehicle) => (
+                          <TableRow key={vehicle.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                  <Bus className="h-4 w-4" />
+                                </span>
+                                <p className="font-medium font-mono text-sm">
+                                  {vehicle.registrationNumber}
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <p className="text-sm font-medium">
+                                {vehicle.make} {vehicle.model}
+                              </p>
+                              <p className="text-xs text-muted-foreground">{vehicle.year}</p>
+                            </TableCell>
+                            <TableCell className="tabular-nums text-sm">
+                              {vehicle.capacity}
+                            </TableCell>
+                            <TableCell>{getStatusBadge(vehicle.status)}</TableCell>
+                            <TableCell className="text-sm max-w-[140px] truncate">
+                              {vehicle.driverName || 'Unassigned'}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {formatServiceDate(vehicle.nextMaintenance)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => handleViewVehicle(vehicle)}>
+                                    <Eye className="h-4 w-4 mr-2" />
+                                    View details
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleEditClick(vehicle)}>
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit vehicle
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => openAssignDriver(vehicle)}>
+                                    <UserCheck className="h-4 w-4 mr-2" />
+                                    Assign driver
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onClick={() => handleDeleteClick(vehicle)}
+                                    className="text-red-600"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollableTable>
+                </div>
+                <div className="lg:hidden grid grid-cols-1 gap-3">
+                  {userVehicles.map((vehicle) => (
+                    <VehicleCard key={vehicle.id} vehicle={vehicle} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          {!awaitingStationPick ? (
             <TablePagination
               page={page}
               pagination={pagination}
               onPageChange={setPage}
               loading={loading}
               itemLabel="vehicles"
+              pageSize={pageSize}
+              onPageSizeChange={setPageSize}
+              alwaysShow
             />
-          </CardContent>
-        </Card>
-      </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
-      {/* Vehicle Cards for mobile */}
-      <div className="lg:hidden grid grid-cols-1 gap-4">
-        {userVehicles.map((vehicle) => (
-          <VehicleCard key={vehicle.id} vehicle={vehicle} />
-        ))}
-      </div>
+      <RegisterVehicleDialog
+        open={showAddDialog}
+        onOpenChange={setShowAddDialog}
+        form={newVehicle}
+        onFormChange={(patch) => setNewVehicle((prev) => ({ ...prev, ...patch }))}
+        onSubmit={() => void handleAddVehicle()}
+        isSubmitting={isSubmitting}
+        showStationPicker={dataEntry.needsPicker || isGlobalUser}
+        registerStationId={registerStationId}
+        onRegisterStationIdChange={setRegisterStationId}
+        stations={dataEntry.stations}
+      />
 
       {/* View Vehicle Details Dialog */}
       <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
@@ -732,11 +794,11 @@ export function VehicleManagement() {
                 </div>
                 <div>
                   <Label className="text-gray-600">Last Maintenance</Label>
-                  <p className="font-medium">{new Date(selectedVehicle.lastMaintenance).toLocaleDateString()}</p>
+                  <p className="font-medium">{formatServiceDate(selectedVehicle.lastMaintenance)}</p>
                 </div>
                 <div>
                   <Label className="text-gray-600">Next Maintenance</Label>
-                  <p className="font-medium">{new Date(selectedVehicle.nextMaintenance).toLocaleDateString()}</p>
+                  <p className="font-medium">{formatServiceDate(selectedVehicle.nextMaintenance)}</p>
                 </div>
               </div>
             </div>
@@ -771,9 +833,11 @@ export function VehicleManagement() {
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="maintenance">Maintenance</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
+                    {vehicleStatusOptions.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -944,6 +1008,7 @@ export function VehicleManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
     </div>
   );
 }

@@ -1,9 +1,9 @@
 import React from 'react';
-import { Download, Search } from 'lucide-react';
+import { Download, Search, SlidersHorizontal, Star } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
-import { Label } from '../../ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
+import { ScrollableTable } from '../../shared/ScrollableTable';
 import type { ListPagination } from '../../utils/api/client';
 import type { Rating, RatingFilters } from '../types';
 import { TablePagination } from '../../shared/TablePagination';
@@ -18,6 +18,8 @@ interface RatingsTabProps {
   page?: number;
   pagination?: ListPagination | null;
   onPageChange?: (page: number) => void;
+  pageSize?: number;
+  onPageSizeChange?: (size: number) => void;
   loading?: boolean;
 }
 
@@ -29,88 +31,107 @@ export function RatingsTab({
   page = 1,
   pagination = null,
   onPageChange,
+  pageSize,
+  onPageSizeChange,
   loading = false,
 }: RatingsTabProps) {
+  const total = pagination?.totalItems ?? ratings.length;
+  const hasActiveFilters = Boolean(filters.search.trim());
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-4 sm:items-end">
-        <div className="flex-1 space-y-2">
-          <Label htmlFor="ratings-search" className="text-xs uppercase tracking-wide text-muted-foreground">
-            Search Ratings
-          </Label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="ratings-search"
-              placeholder="Search by passenger, route, or ticket..."
-              value={filters.search}
-              onChange={(e) => onFiltersChange({ search: e.target.value })}
-              className="pl-10 bg-background"
-            />
-          </div>
+      <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="ratings-search"
+            placeholder="Passenger, route, ticket ID…"
+            value={filters.search}
+            onChange={(e) => onFiltersChange({ search: e.target.value })}
+            className="pl-9 h-10 bg-background/80"
+          />
         </div>
-        <Button onClick={onExport} variant="outline">
+        {hasActiveFilters ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-10 text-muted-foreground"
+            onClick={() => onFiltersChange({ search: '' })}
+          >
+            Clear
+          </Button>
+        ) : null}
+        <Button onClick={onExport} variant="outline" size="sm" className="h-10 shrink-0">
           <Download className="h-4 w-4 mr-2" />
           Export
         </Button>
       </div>
 
-      <div className="rounded-lg border bg-background overflow-hidden">
-        <div className="px-5 py-4 border-b">
-          <h3 className="text-sm font-semibold">Ratings Registry</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {pagination?.totalItems ?? ratings.length} rating
-            {(pagination?.totalItems ?? ratings.length) !== 1 ? 's' : ''} recorded
-          </p>
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="text-xs uppercase tracking-wide">Passenger</TableHead>
-              <TableHead className="text-xs uppercase tracking-wide">Route</TableHead>
-              <TableHead className="text-xs uppercase tracking-wide">Vehicle</TableHead>
-              <TableHead className="text-xs uppercase tracking-wide">Driver</TableHead>
-              <TableHead className="text-xs uppercase tracking-wide">Rating</TableHead>
-              <TableHead className="text-xs uppercase tracking-wide">Date</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {ratings.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  No ratings match your search.
-                </TableCell>
-              </TableRow>
-            ) : (
-              ratings.map((rating) => (
-                <TableRow key={rating.id}>
-                  <TableCell>
-                    <p className="font-medium text-sm">{rating.passengerName}</p>
-                    <p className="text-xs text-muted-foreground font-mono">{rating.ticketId}</p>
-                  </TableCell>
-                  <TableCell className="text-sm max-w-[180px] truncate">{rating.route}</TableCell>
-                  <TableCell className="text-sm font-mono">{rating.vehicle}</TableCell>
-                  <TableCell className="text-sm">{rating.driver}</TableCell>
-                  <TableCell>
-                    <StarRating rating={rating.rating} />
-                  </TableCell>
-                  <TableCell className="text-sm">{formatFeedbackDate(rating.ratingDate)}</TableCell>
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+        {total} rating{total === 1 ? '' : 's'} in registry
+      </p>
+
+      <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
+        {ratings.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 px-6 text-center rounded-xl border border-dashed border-border/60 bg-muted/20">
+            <Star className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <p className="text-sm font-medium">No ratings match your search</p>
+            <p className="text-xs text-muted-foreground mt-1">Try clearing filters or check back after trips complete.</p>
+          </div>
+        ) : (
+          <ScrollableTable
+            className="rounded-xl ring-1 ring-border/50 border border-border/60"
+            maxHeightClass="max-h-[min(70vh,560px)]"
+            minWidthClass="min-w-[920px]"
+          >
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Passenger</TableHead>
+                  <TableHead>Route</TableHead>
+                  <TableHead>Vehicle</TableHead>
+                  <TableHead>Driver</TableHead>
+                  <TableHead>Rating</TableHead>
+                  <TableHead>Date</TableHead>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        {onPageChange ? (
-          <TablePagination
-            page={page}
-            pagination={pagination}
-            onPageChange={onPageChange}
-            loading={loading}
-            itemLabel="ratings"
-            className="px-5"
-          />
-        ) : null}
+              </TableHeader>
+              <TableBody>
+                {ratings.map((rating) => (
+                  <TableRow key={rating.id}>
+                    <TableCell>
+                      <p className="font-medium text-sm">{rating.passengerName}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{rating.ticketId}</p>
+                    </TableCell>
+                    <TableCell className="text-sm max-w-[180px] truncate">{rating.route}</TableCell>
+                    <TableCell className="text-sm font-mono">{rating.vehicle}</TableCell>
+                    <TableCell className="text-sm">{rating.driver}</TableCell>
+                    <TableCell>
+                      <StarRating rating={rating.rating} />
+                    </TableCell>
+                    <TableCell className="text-sm tabular-nums">
+                      {formatFeedbackDate(rating.ratingDate)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollableTable>
+        )}
       </div>
+
+      {onPageChange ? (
+        <TablePagination
+          page={page}
+          pagination={pagination}
+          onPageChange={onPageChange}
+          loading={loading}
+          itemLabel="ratings"
+          pageSize={pageSize}
+          onPageSizeChange={onPageSizeChange}
+          alwaysShow
+        />
+      ) : null}
     </div>
   );
 }

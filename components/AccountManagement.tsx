@@ -1,6 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
-import { Card, CardContent } from './ui/card';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  BarChart3,
+  FileText,
+  LayoutGrid,
+  PieChart,
+  Receipt,
+  Wallet,
+} from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { useAuth } from './AuthContext';
 import { AccessRestricted } from './AccessRestricted';
@@ -35,6 +44,7 @@ import { RevenueSourcesSection } from './AccountManagement/components/RevenueSou
 import { BudgetsSection } from './AccountManagement/components/BudgetsSection';
 import { ReportsSection } from './AccountManagement/components/ReportsSection';
 import { AccountDialogs } from './AccountManagement/components/AccountDialogs';
+import { ClaimPaymentDialog } from './AccountManagement/components/ClaimPaymentDialog';
 import { useClientPagination } from './shared/hooks/useClientPagination';
 
 export function AccountManagement() {
@@ -51,13 +61,14 @@ export function AccountManagement() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAddTransactionDialog, setShowAddTransactionDialog] = useState(false);
   const [showAddRevenueSourceDialog, setShowAddRevenueSourceDialog] = useState(false);
+  const [showClaimPaymentDialog, setShowClaimPaymentDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
   const [newTransaction, setNewTransaction] = useState<NewTransactionForm>(DEFAULT_NEW_TRANSACTION);
   const [newRevenueSource, setNewRevenueSource] = useState<NewRevenueSourceForm>(DEFAULT_NEW_REVENUE_SOURCE);
 
-  const loadAccountData = async () => {
+  const loadAccountData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -145,14 +156,19 @@ export function AccountManagement() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadAccountData();
   }, []);
 
+  useEffect(() => {
+    void loadAccountData();
+  }, [loadAccountData]);
+
+  const canProcessClaimPayments =
+    isSuperAdmin() || hasPermission('process_claim_payments');
   const canManageAccounts =
-    isSuperAdmin() || hasPermission('manage_finances') || hasPermission('view_revenue');
+    isSuperAdmin() ||
+    hasPermission('manage_finances') ||
+    hasPermission('view_revenue') ||
+    canProcessClaimPayments;
 
   const stats = useMemo(() => {
     const base = calculateStats(transactions);
@@ -183,7 +199,12 @@ export function AccountManagement() {
     page: transactionPage,
     setPage: setTransactionPage,
     pagination: transactionPagination,
+    pageSize: transactionPageSize,
+    setPageSize: setTransactionPageSize,
   } = useClientPagination(filteredTransactions, undefined, transactionResetKey);
+
+  const hasAnyData =
+    transactions.length > 0 || revenueSources.length > 0 || budgets.length > 0;
 
   const canEdit = (transaction: Transaction) =>
     isSuperAdmin() || transaction.createdBy === user?.id;
@@ -271,67 +292,84 @@ export function AccountManagement() {
     );
   }
 
-  if (loading) {
+  if (loading && !hasAnyData && !error) {
     return (
-      <div className="min-h-full bg-muted/30 flex items-center justify-center py-24">
-        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-full bg-muted/30 flex flex-col items-center justify-center py-24 px-6 text-center">
-        <p className="text-sm text-muted-foreground mb-4">{error}</p>
-        <button
-          type="button"
-          onClick={() => loadAccountData()}
-          className="text-sm font-medium text-[#193cb8] hover:underline"
-        >
-          Try again
-        </button>
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading account data…" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-muted/30">
-      <AccountCommandHeader
-        stats={stats}
-        onExport={handleExport}
-        onAddTransaction={() => setShowAddTransactionDialog(true)}
-      />
+    <div className="min-h-full rise-dashboard-page">
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        <AccountCommandHeader
+          stats={stats}
+          onExport={() => void handleExport()}
+          onAddTransaction={() => setShowAddTransactionDialog(true)}
+          onRefresh={() => void loadAccountData()}
+          loading={loading}
+          canProcessClaimPayments={canProcessClaimPayments}
+          onPayClaims={() => setShowClaimPaymentDialog(true)}
+        />
 
-      <div className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
+        {error && !hasAnyData ? (
+          <RiseStatusAlert type="error" title="Could not load account data">
+            {error}
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => void loadAccountData()}>
+              Try again
+            </Button>
+          </RiseStatusAlert>
+        ) : null}
+
+        {error && hasAnyData && !loading ? (
+          <RiseStatusAlert type="warning" title="Some account data may be incomplete">
+            {error}
+          </RiseStatusAlert>
+        ) : null}
+
         <AccountKpiDashboard stats={stats} />
 
-        <Card className="border shadow-none">
-          <CardContent className="p-0">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <div className="px-5 pt-5 pb-0 border-b overflow-x-auto">
-                <TabsList className="inline-flex h-auto w-full min-w-max gap-1 bg-muted/50 p-1.5 rounded-lg border shadow-none">
+        <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 overflow-hidden border-0">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <CardHeader className="border-b border-border/60 bg-muted/20 pb-4 space-y-4">
+              <div>
+                <CardTitle className="text-lg font-semibold">Finance workspace</CardTitle>
+                <CardDescription className="mt-1">
+                  Ledger, revenue sources, budgets, analytics, and exports.
+                </CardDescription>
+              </div>
+              <div className="rise-segment-tabs w-full overflow-x-auto">
+                <TabsList className="grid w-full min-w-[720px] grid-cols-3 sm:grid-cols-6">
                   <TabsTrigger value="overview" className={ACCOUNT_TAB_TRIGGER_CLASS}>
+                    <LayoutGrid className="h-4 w-4 shrink-0 opacity-80 hidden sm:block" />
                     Overview
                   </TabsTrigger>
                   <TabsTrigger value="transactions" className={ACCOUNT_TAB_TRIGGER_CLASS}>
+                    <Receipt className="h-4 w-4 shrink-0 opacity-80 hidden sm:block" />
                     Transactions
                   </TabsTrigger>
                   <TabsTrigger value="revenue" className={ACCOUNT_TAB_TRIGGER_CLASS}>
-                    Revenue Sources
+                    <Wallet className="h-4 w-4 shrink-0 opacity-80 hidden sm:block" />
+                    Revenue
                   </TabsTrigger>
                   <TabsTrigger value="budgets" className={ACCOUNT_TAB_TRIGGER_CLASS}>
+                    <PieChart className="h-4 w-4 shrink-0 opacity-80 hidden sm:block" />
                     Budgets
                   </TabsTrigger>
                   <TabsTrigger value="analytics" className={ACCOUNT_TAB_TRIGGER_CLASS}>
+                    <BarChart3 className="h-4 w-4 shrink-0 opacity-80 hidden sm:block" />
                     Analytics
                   </TabsTrigger>
                   <TabsTrigger value="reports" className={ACCOUNT_TAB_TRIGGER_CLASS}>
+                    <FileText className="h-4 w-4 shrink-0 opacity-80 hidden sm:block" />
                     Reports
                   </TabsTrigger>
                 </TabsList>
               </div>
-
-              <div className="p-5">
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
                 <TabsContent value="overview" className="mt-0">
                   <OverviewSection
                     stats={stats}
@@ -358,6 +396,8 @@ export function AccountManagement() {
                     page={transactionPage}
                     pagination={transactionPagination}
                     onPageChange={setTransactionPage}
+                    pageSize={transactionPageSize}
+                    onPageSizeChange={setTransactionPageSize}
                   />
                 </TabsContent>
 
@@ -385,8 +425,8 @@ export function AccountManagement() {
                   <ReportsSection />
                 </TabsContent>
               </div>
-            </Tabs>
-          </CardContent>
+            </CardContent>
+          </Tabs>
         </Card>
       </div>
 
@@ -401,6 +441,12 @@ export function AccountManagement() {
         newRevenueSource={newRevenueSource}
         setNewRevenueSource={setNewRevenueSource}
         onAddRevenueSource={handleAddRevenueSource}
+      />
+
+      <ClaimPaymentDialog
+        open={showClaimPaymentDialog}
+        onOpenChange={setShowClaimPaymentDialog}
+        onPaymentComplete={() => void loadAccountData()}
       />
     </div>
   );

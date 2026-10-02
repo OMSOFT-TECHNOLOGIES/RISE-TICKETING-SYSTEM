@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { authApi } from './utils/api';
 import { Eye, EyeOff, Lock, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { notify } from './utils/notify';
+import { RisePreloader } from './shared/feedback';
 
 interface ResetPasswordProps {
   token: string;
@@ -131,18 +132,7 @@ export function ResetPassword({ token, onSuccess }: ResetPasswordProps) {
 
   // Loading state while verifying token
   if (isVerifying) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#193cb8]/5 via-background to-[#193cb8]/5 p-4">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <div className="flex flex-col items-center justify-center py-8 space-y-4">
-              <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
-              <p className="text-muted-foreground">Verifying reset link...</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <RisePreloader variant="fullscreen" label="Verifying reset link…" showBrand />;
   }
 
   // Invalid token state

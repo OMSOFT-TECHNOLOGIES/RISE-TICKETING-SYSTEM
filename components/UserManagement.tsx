@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -10,28 +10,38 @@ import {
   Edit, 
   Eye,
   EyeOff,
-  Shield,
   Mail,
-  Phone,
   Building,
   UserCheck,
   UserX,
   Crown,
-  AlertCircle,
-  Loader2,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
-import { Badge } from './ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { cn } from './ui/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { userRoles } from './constants/userRoles';
-import { formatDate, getStatusBadgeClass, getRoleBadgeClass } from './utils/helpers';
+import {
+  USER_FORM_REGIONS,
+  userFormDistrictsForRegion,
+} from './UserManagement/userFormGeoOptions';
+import { DISTRICTS_BY_REGION } from './constants/ghanaDistricts';
+import { formatDate } from './utils/helpers';
 import { userApi, parseListResponse } from './utils/api';
 import { TablePagination } from './shared/TablePagination';
-import type { ListPagination } from './utils/api/client';
+import { ScrollableTable } from './shared/ScrollableTable';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
+import { PageHeader } from './shared/PageHeader';
+import { DashboardStatCard } from './Dashboard/DashboardStatCard';
+import { AccessRestricted } from './AccessRestricted';
+import {
+  DEFAULT_LIST_PAGE_SIZE,
+  parsePagination,
+  type ListPagination,
+} from './utils/api/client';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,38 +52,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { UserEditDialog, type EditableUser } from './UserManagement/UserEditDialog';
+import { UserEditDialog, type EditableUser, type UserFormOptions } from './UserManagement/UserEditDialog';
+import { UserCreateDialog, type NewUserFormState } from './UserManagement/UserCreateDialog';
+import { UserDetailsDialog } from './UserManagement/UserDetailsDialog';
+import { UserOnlineBadge, UserRoleBadge, UserStatusBadge } from './UserManagement/userBadges';
 import { canCreateUsers, canModifyUser } from './UserManagement/userAccess';
-import { PasswordConfirmFeedback } from './shared/PasswordConfirmFeedback';
 import {
   passwordsMatch,
   validatePasswordConfirmation,
   validatePasswordStrength,
 } from './utils/passwordValidation';
-
-type UserFormRoleOption = {
-  value: string;
-  label: string;
-  description: string;
-  requiresStation: boolean;
-  requiresRegion: boolean;
-};
-
-type UserFormStationOption = {
-  id: string;
-  name: string;
-  region?: string;
-  district?: string;
-  city?: string;
-  address?: string;
-};
-
-type UserFormOptions = {
-  roles: UserFormRoleOption[];
-  regions: string[];
-  districtsByRegion: Record<string, string[]>;
-  stations: UserFormStationOption[];
-};
 import { notify } from './utils/notify';
 import { usePageAction } from './context/PageActionContext';
 
@@ -109,7 +97,8 @@ export function UserManagement() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState<{ totalPages: number; total: number } | null>(null);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const [listPagination, setListPagination] = useState<ListPagination | null>(null);
   const [statistics, setStatistics] = useState<{
     total: number;
     active: number;
@@ -126,7 +115,12 @@ export function UserManagement() {
       setFormOptionsLoading(true);
       const response = await userApi.getFormOptions();
       if (response.success && response.data) {
-        setFormOptions(response.data as UserFormOptions);
+        const data = response.data as UserFormOptions;
+        setFormOptions({
+          ...data,
+          regions: [...USER_FORM_REGIONS],
+          districtsByRegion: { ...DISTRICTS_BY_REGION },
+        });
       } else {
         setFormOptions(null);
         console.error('Fetch user form options error:', response.error);
@@ -166,55 +160,88 @@ export function UserManagement() {
     });
   };
   const stationOptions = formOptions?.stations ?? [];
-  const regionOptions = formOptions?.regions ?? [];
-  const districtOptions =
-    newUser.region && formOptions?.districtsByRegion
-      ? formOptions.districtsByRegion[newUser.region] ?? []
-      : [];
+  const regionOptions = USER_FORM_REGIONS;
+  const districtOptions = userFormDistrictsForRegion(newUser.region);
 
-  const fetchUsers = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await userApi.getAll({
-        page,
-        limit: 50,
-        search: searchTerm.trim() || undefined,
-        role: roleFilter !== 'all' ? roleFilter : undefined,
-        status: statusFilter !== 'all' ? statusFilter : undefined,
-      });
-      if (response.success && response.data) {
-        const data = response.data as Record<string, unknown>;
-        setUsers(parseListResponse(data, 'users'));
-        const stats = data.statistics as typeof statistics;
-        if (stats && typeof stats === 'object') {
-          setStatistics(stats);
+  const fetchUsers = useCallback(
+    async (options?: { page?: number; pageSize?: number; silent?: boolean }) => {
+      const queryPage = options?.page ?? page;
+      const limit = options?.pageSize ?? pageSize;
+      const silent = options?.silent ?? false;
+      try {
+        if (!silent) {
+          setLoading(true);
         }
-        const pag = data.pagination as { totalPages?: number; total?: number } | undefined;
-        if (pag) {
-          setPagination({
-            totalPages: Number(pag.totalPages ?? 1),
-            total: Number(pag.total ?? 0),
-          });
-        }
-      } else {
-        setError(response.error || 'Failed to load users');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect to server');
-    } finally {
-      setLoading(false);
-    }
-  }, [page, roleFilter, searchTerm, statusFilter]);
+        setError(null);
+        const response = await userApi.getAll({
+          page: queryPage,
+          limit,
+          search: searchTerm.trim() || undefined,
+          role: roleFilter !== 'all' ? roleFilter : undefined,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+        });
+        if (response.success && response.data) {
+          const data = response.data as Record<string, unknown>;
+          const allRows = parseListResponse<Record<string, unknown>>(data, 'users');
+          const stats = data.statistics as typeof statistics;
+          if (stats && typeof stats === 'object') {
+            setStatistics(stats);
+          }
 
-  const listPagination: ListPagination | null = pagination
-    ? {
-        page,
-        limit: 50,
-        totalItems: pagination.total,
-        totalPages: pagination.totalPages,
+          const pag = parsePagination(data);
+          const statTotal =
+            stats && typeof stats.total === 'number' ? stats.total : null;
+
+          if (pag) {
+            setUsers(allRows);
+            setListPagination({
+              page: queryPage,
+              limit: pag.limit ?? limit,
+              totalItems: pag.totalItems,
+              totalPages: Math.max(1, pag.totalPages),
+            });
+          } else if (allRows.length > limit) {
+            const totalItems = statTotal ?? allRows.length;
+            const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+            const start = (queryPage - 1) * limit;
+            setUsers(allRows.slice(start, start + limit));
+            setListPagination({
+              page: queryPage,
+              limit,
+              totalItems,
+              totalPages,
+            });
+          } else {
+            const totalItems = statTotal ?? allRows.length;
+            setUsers(allRows);
+            setListPagination({
+              page: queryPage,
+              limit,
+              totalItems,
+              totalPages: Math.max(1, Math.ceil(totalItems / limit) || 1),
+            });
+          }
+        } else {
+          setError(response.error || 'Failed to load users');
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to connect to server');
+      } finally {
+        setLoading(false);
       }
-    : null;
+    },
+    [page, pageSize, roleFilter, searchTerm, statusFilter]
+  );
+
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setPage(1);
+    void fetchUsers({ page: 1, pageSize: size });
+  };
 
   useEffect(() => {
     fetchUsers();
@@ -226,7 +253,7 @@ export function UserManagement() {
 
   useEffect(() => {
     if (pendingAction === 'new-user') {
-      setShowAddDialog(true);
+      handleAddDialogOpenChange(true);
       clearAction();
     }
   }, [pendingAction, clearAction]);
@@ -326,10 +353,19 @@ export function UserManagement() {
       
       if (response.success) {
         notify.success(response.message || `User ${newUser.fullName} has been created successfully`);
-        
-        // Refresh user list
-        await fetchUsers();
-        
+
+        const created = response.data as Record<string, unknown> | undefined;
+        if (created && typeof created === 'object' && created.id != null) {
+          setUsers((prev) => {
+            const id = String(created.id);
+            if (prev.some((u) => String(u.id) === id)) return prev;
+            return [created, ...prev];
+          });
+        }
+
+        setPage(1);
+        await fetchUsers({ page: 1, silent: true });
+
         // Reset form
         setNewUser({ 
           username: '', 
@@ -366,32 +402,33 @@ export function UserManagement() {
     }
   };
 
-  const getRoleBadge = (role: string) => {
-    const roleInfo = userRoles.find(r => r.value === role);
-    const IconComponent = role.includes('admin') ? Crown : UserCheck;
-    return (
-      <Badge className={getRoleBadgeClass(role)}>
-        <IconComponent className="h-3 w-3 mr-1" />
-        {roleInfo?.label || role.replace('_', ' ')}
-      </Badge>
-    );
+  const defaultNewUser = (): NewUserFormState => ({
+    username: '',
+    email: '',
+    fullName: '',
+    phone: '',
+    password: '',
+    confirmPassword: '',
+    role: 'station_worker',
+    stationId: '',
+    region: '',
+    district: '',
+  });
+
+  const resetNewUserForm = () => {
+    setFormErrors({});
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+    setNewUser(defaultNewUser());
   };
 
-  const getStatusBadge = (status: string) => {
-    const getStatusLabel = (status: string) => {
-      switch (status) {
-        case 'active': return 'Active';
-        case 'inactive': return 'Inactive';
-        case 'suspended': return 'Suspended';
-        default: return status.charAt(0).toUpperCase() + status.slice(1);
-      }
-    };
-
-    return (
-      <Badge className={getStatusBadgeClass(status)}>
-        {getStatusLabel(status)}
-      </Badge>
-    );
+  const handleAddDialogOpenChange = (open: boolean) => {
+    setShowAddDialog(open);
+    if (open) {
+      void fetchFormOptions();
+    } else {
+      resetNewUserForm();
+    }
   };
 
   const openEditUser = (userItem: EditableUser) => {
@@ -408,7 +445,7 @@ export function UserManagement() {
       if (response.success) {
         notify.success(response.message || 'User deleted successfully');
         setUserToDelete(null);
-        await fetchUsers();
+        await fetchUsers({ silent: true });
       } else {
         notify.error('Failed to delete user', { description: response.error });
       }
@@ -434,8 +471,7 @@ export function UserManagement() {
       
       if (response.success) {
         notify.success(response.message || 'User status updated successfully');
-        // Refresh user list
-        await fetchUsers();
+        await fetchUsers({ silent: true });
       } else {
         console.error('Toggle status error:', response);
         notify.error('Failed to update user status', {
@@ -467,48 +503,14 @@ export function UserManagement() {
   
   if (!canManageUsers) {
     return (
-      <div className="p-6 text-center">
-        <Shield className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-        <h2 className="text-2xl font-bold text-gray-600 mb-2">Access Restricted</h2>
-        <p className="text-gray-500">
-          You need appropriate permissions to manage users.
-        </p>
-      </div>
+      <AccessRestricted message="You need appropriate permissions to manage users." />
     );
   }
 
-  // Loading state
-  if (loading) {
+  if (loading && users.length === 0 && !error) {
     return (
-      <div className="p-6 flex flex-col items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8] mb-4" />
-        <p className="text-muted-foreground">Loading users...</p>
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center space-y-4">
-              <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
-              <div>
-                <h3 className="font-semibold text-lg mb-2">Failed to Load Users</h3>
-                <p className="text-muted-foreground mb-4">{error}</p>
-                <Button 
-                  onClick={fetchUsers}
-                  style={{ backgroundColor: '#193cb8' }}
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Retry
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading users…" />
       </div>
     );
   }
@@ -524,553 +526,81 @@ export function UserManagement() {
   const suspendedUsers =
     statistics?.suspended ?? filteredUsers.filter((u) => u.status === 'suspended').length;
 
+  const hasActiveFilters = roleFilter !== 'all' || statusFilter !== 'all' || Boolean(searchTerm.trim());
+  const listTotal = listPagination?.totalItems ?? filteredUsers.length;
+
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1>User Management</h1>
-          <p className="text-muted-foreground">
-            Manage user accounts and permissions across the RISE system
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => fetchUsers()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-        {canCreateUser && (
-        <Dialog open={showAddDialog} onOpenChange={(open) => {
-          setShowAddDialog(open);
-          if (open) {
-            void fetchFormOptions();
+    <div className="min-h-full rise-dashboard-page">
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        <PageHeader
+          title="User management"
+          description="Manage accounts, roles, and station assignments across RISE."
+          actions={
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void fetchUsers()}
+                disabled={loading}
+              >
+                <RefreshCw className={cn('h-4 w-4 mr-2', loading && 'animate-spin')} />
+                Refresh
+              </Button>
+              {canCreateUser ? (
+                <Button size="sm" onClick={() => handleAddDialogOpenChange(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add user
+                </Button>
+              ) : null}
+            </>
           }
-          if (!open) {
-            setFormErrors({});
-            setShowNewPassword(false);
-            setShowConfirmPassword(false);
-            setNewUser({ 
-              username: '', 
-              email: '', 
-              fullName: '', 
-              phone: '', 
-              password: '',
-              confirmPassword: '',
-              role: 'station_worker', 
-              stationId: '', 
-              region: '', 
-              district: '' 
-            });
-          }
-        }}>
-          <DialogTrigger asChild>
-            <Button className="bg-[#193cb8] hover:bg-[#142f9e] text-white">
-              <Plus className="h-4 w-4 mr-2" />
-              Add User
+        />
+
+        {error && users.length === 0 ? (
+          <RiseStatusAlert type="error" title="Could not load users">
+            {error}
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => void fetchUsers()}>
+              Try again
             </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader className="space-y-3 pb-4 border-b">
-              <DialogTitle className="flex items-center gap-3 text-2xl">
-                <div className="p-2 bg-[#193cb8]/10 rounded-lg">
-                  <Users className="h-6 w-6 text-[#193cb8]" />
-                </div>
-                Create New User Account
-              </DialogTitle>
-              <DialogDescription className="text-base">
-                Register a new user in the RISE system. All fields marked with an asterisk <span className="text-destructive font-semibold">(*)</span> are required.
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="space-y-6 py-6">
-              {/* Personal Information Section */}
-              <div className="space-y-5">
-                <div className="flex items-center gap-2">
-                  <div className="h-1 w-1 rounded-full bg-[#193cb8]"></div>
-                  <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">
-                    Personal Information
-                  </h3>
-                </div>
-                
-                <div className="space-y-2.5">
-                  <Label htmlFor="fullName" className="flex items-center gap-1.5 text-sm font-semibold">
-                    Full Name
-                    <span className="text-destructive font-bold">*</span>
-                  </Label>
-                  <Input
-                    id="fullName"
-                    value={newUser.fullName}
-                    onChange={(e) => {
-                      setNewUser({...newUser, fullName: e.target.value});
-                      if (formErrors.fullName) {
-                        setFormErrors({...formErrors, fullName: ''});
-                      }
-                    }}
-                    placeholder="Enter full legal name (e.g., John Mensah Doe)"
-                    className={`h-11 ${formErrors.fullName ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.fullName && (
-                    <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
-                      <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                      <p className="text-sm text-destructive font-medium">
-                        {formErrors.fullName}
-                      </p>
-                    </div>
-                  )}
-                </div>
+          </RiseStatusAlert>
+        ) : null}
 
-                <div className="space-y-2.5">
-                  <Label htmlFor="username" className="flex items-center gap-1.5 text-sm font-semibold">
-                    Username
-                    <span className="text-destructive font-bold">*</span>
-                  </Label>
-                  <Input
-                    id="username"
-                    value={newUser.username}
-                    onChange={(e) => {
-                      setNewUser({...newUser, username: e.target.value.toLowerCase()});
-                      if (formErrors.username) {
-                        setFormErrors({...formErrors, username: ''});
-                      }
-                    }}
-                    placeholder="username (lowercase, e.g., j.doe or john.doe)"
-                    className={`h-11 font-mono ${formErrors.username ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.username && (
-                    <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
-                      <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                      <p className="text-sm text-destructive font-medium">
-                        {formErrors.username}
-                      </p>
-                    </div>
-                  )}
-                  {!formErrors.username && (
-                    <p className="text-xs text-muted-foreground">
-                      Must be unique and contain only letters, numbers, dots, hyphens, or underscores
-                    </p>
-                  )}
-                </div>
+        {error && users.length > 0 && !loading ? (
+          <RiseStatusAlert type="warning" title="User list may be incomplete">
+            {error}
+          </RiseStatusAlert>
+        ) : null}
 
-                <div className="space-y-2.5">
-                  <Label htmlFor="email" className="flex items-center gap-1.5 text-sm font-semibold">
-                    Email Address
-                    <span className="text-destructive font-bold">*</span>
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={newUser.email}
-                    onChange={(e) => {
-                      setNewUser({...newUser, email: e.target.value});
-                      if (formErrors.email) {
-                        setFormErrors({...formErrors, email: ''});
-                      }
-                    }}
-                    placeholder="user@rise.gov.gh or official email"
-                    className={`h-11 ${formErrors.email ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.email && (
-                    <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
-                      <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                      <p className="text-sm text-destructive font-medium">
-                        {formErrors.email}
-                      </p>
-                    </div>
-                  )}
-                  {!formErrors.email && (
-                    <p className="text-xs text-muted-foreground">
-                      Official email address for system notifications and account recovery
-                    </p>
-                  )}
-                </div>
+        <section className="rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm p-4 sm:p-5 ring-1 ring-border/40">
+          <h2 className="text-sm font-semibold tracking-tight mb-4">Overview</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+            <DashboardStatCard title="Total users" value={totalUsers} icon={Users} accent="blue" hint="Registered accounts" />
+            <DashboardStatCard title="Administrators" value={adminUsers} icon={Crown} accent="violet" hint="Admin roles" />
+            <DashboardStatCard title="Active" value={activeUsers} icon={UserCheck} accent="emerald" hint="Can sign in" />
+            <DashboardStatCard title="Suspended" value={suspendedUsers} icon={UserX} accent="amber" hint="Access restricted" />
+          </div>
+        </section>
 
-                <div className="space-y-2.5">
-                  <Label htmlFor="phone" className="flex items-center gap-1.5 text-sm font-semibold">
-                    Phone Number
-                    <span className="text-destructive font-bold">*</span>
-                  </Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={newUser.phone}
-                    onChange={(e) => {
-                      setNewUser({...newUser, phone: e.target.value});
-                      if (formErrors.phone) {
-                        setFormErrors({...formErrors, phone: ''});
-                      }
-                    }}
-                    placeholder="+233 XX XXX XXXX or 0XX XXX XXXX"
-                    className={`h-11 ${formErrors.phone ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.phone && (
-                    <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
-                      <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                      <p className="text-sm text-destructive font-medium">
-                        {formErrors.phone}
-                      </p>
-                    </div>
-                  )}
-                  {!formErrors.phone && (
-                    <p className="text-xs text-muted-foreground">
-                      Contact number for official communications
-                    </p>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2.5">
-                    <Label htmlFor="password" className="flex items-center gap-1.5 text-sm font-semibold">
-                      Password
-                      <span className="text-destructive font-bold">*</span>
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="password"
-                        type={showNewPassword ? 'text' : 'password'}
-                        value={newUser.password}
-                        onChange={(e) => {
-                          const password = e.target.value;
-                          setNewUser({ ...newUser, password });
-                          syncPasswordFieldErrors(password, newUser.confirmPassword);
-                        }}
-                        placeholder="Create a strong password"
-                        className={`h-11 pr-10 ${formErrors.password ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                        disabled={isSubmitting}
-                        autoComplete="new-password"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                        onClick={() => setShowNewPassword((v) => !v)}
-                        tabIndex={-1}
-                        aria-label={showNewPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showNewPassword ? (
-                          <EyeOff className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <Eye className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </Button>
-                    </div>
-                    {formErrors.password && (
-                      <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
-                        <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                        <p className="text-sm text-destructive font-medium">{formErrors.password}</p>
-                      </div>
-                    )}
-                    {!formErrors.password && (
-                      <p className="text-xs text-muted-foreground">
-                        Minimum 8 characters with uppercase, lowercase, and number
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2.5">
-                    <Label htmlFor="confirmPassword" className="flex items-center gap-1.5 text-sm font-semibold">
-                      Confirm password
-                      <span className="text-destructive font-bold">*</span>
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="confirmPassword"
-                        type={showConfirmPassword ? 'text' : 'password'}
-                        value={newUser.confirmPassword}
-                        onChange={(e) => {
-                          const confirmPassword = e.target.value;
-                          setNewUser({ ...newUser, confirmPassword });
-                          syncPasswordFieldErrors(newUser.password, confirmPassword);
-                        }}
-                        placeholder="Re-enter password"
-                        className={`h-11 pr-10 ${formErrors.confirmPassword ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                        disabled={isSubmitting}
-                        autoComplete="new-password"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                        onClick={() => setShowConfirmPassword((v) => !v)}
-                        tabIndex={-1}
-                        aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-                      >
-                        {showConfirmPassword ? (
-                          <EyeOff className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <Eye className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </Button>
-                    </div>
-                    {formErrors.confirmPassword && (
-                      <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
-                        <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                        <p className="text-sm text-destructive font-medium">{formErrors.confirmPassword}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <PasswordConfirmFeedback
-                  password={newUser.password}
-                  confirmPassword={newUser.confirmPassword}
-                />
-              </div>
-
-              {/* Role & Assignment Section */}
-              <div className="space-y-5 pt-6 border-t-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-1 w-1 rounded-full bg-[#193cb8]"></div>
-                  <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">
-                    Role & Assignment
-                  </h3>
-                </div>
-                
-                <div className="space-y-2.5">
-                  <Label htmlFor="role" className="flex items-center gap-1.5 text-sm font-semibold">
-                    System Role
-                    <span className="text-destructive font-bold">*</span>
-                  </Label>
-                  <Select 
-                    value={newUser.role} 
-                    onValueChange={(value) => {
-                      setNewUser({...newUser, role: value, stationId: '', region: '', district: ''});
-                      setFormErrors({});
-                    }}
-                    disabled={isSubmitting || formOptionsLoading}
-                  >
-                    <SelectTrigger className={`h-11 ${formErrors.role ? 'border-destructive' : ''}`}>
-                      <SelectValue placeholder={formOptionsLoading ? 'Loading roles...' : 'Select user role'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(formOptions?.roles ?? []).map((role) => (
-                        <SelectItem key={role.value} value={role.value}>
-                          <div className="py-1">
-                            <div className="font-medium">{role.label}</div>
-                            <div className="text-xs text-muted-foreground">{role.description}</div>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Role determines access permissions and capabilities within the system
-                  </p>
-                </div>
-
-                {selectedRoleOption?.requiresStation && (
-                  <div className="space-y-2.5 animate-in fade-in-50 duration-300">
-                    <Label htmlFor="station" className="flex items-center gap-1.5 text-sm font-semibold">
-                      Assigned Station
-                      <span className="text-destructive font-bold">*</span>
-                    </Label>
-                    <Select 
-                      value={newUser.stationId} 
-                      onValueChange={(value) => {
-                        setNewUser({...newUser, stationId: value});
-                        if (formErrors.stationId) {
-                          setFormErrors({...formErrors, stationId: ''});
-                        }
-                      }}
-                      disabled={isSubmitting || formOptionsLoading}
-                    >
-                      <SelectTrigger className={`h-11 ${formErrors.stationId ? 'border-destructive' : ''}`}>
-                        <SelectValue placeholder={formOptionsLoading ? 'Loading stations...' : 'Select station'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {stationOptions.length === 0 ? (
-                          <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                            {formOptionsLoading ? 'Loading stations…' : 'No active stations available'}
-                          </div>
-                        ) : (
-                          stationOptions.map((station) => (
-                            <SelectItem key={station.id} value={station.id}>
-                              <div className="flex items-center gap-2">
-                                <Building className="h-4 w-4" />
-                                <div>
-                                  <div className="font-medium">{station.name}</div>
-                                  {(station.city || station.address) && (
-                                    <div className="text-xs text-muted-foreground">
-                                      {[station.city, station.region].filter(Boolean).join(', ')}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                    {formErrors.stationId && (
-                      <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
-                        <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                        <p className="text-sm text-destructive font-medium">
-                          {formErrors.stationId}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {selectedRoleOption?.requiresRegion && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in-50 duration-300">
-                    <div className="space-y-2.5">
-                      <Label htmlFor="region" className="flex items-center gap-1.5 text-sm font-semibold">
-                        Region
-                        <span className="text-destructive font-bold">*</span>
-                      </Label>
-                      <Select
-                        value={newUser.region}
-                        onValueChange={(value) => {
-                          setNewUser({ ...newUser, region: value, district: '' });
-                          if (formErrors.region) {
-                            setFormErrors({ ...formErrors, region: '' });
-                          }
-                        }}
-                        disabled={isSubmitting || formOptionsLoading}
-                      >
-                        <SelectTrigger className={`h-11 ${formErrors.region ? 'border-destructive' : ''}`}>
-                          <SelectValue placeholder={formOptionsLoading ? 'Loading regions...' : 'Select region'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {regionOptions.map((region) => (
-                            <SelectItem key={region} value={region}>
-                              {region}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {formErrors.region && (
-                        <div className="flex items-center gap-2 p-2.5 bg-destructive/10 border border-destructive/20 rounded-md">
-                          <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                          <p className="text-sm text-destructive font-medium">
-                            {formErrors.region}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-2.5">
-                      <Label htmlFor="district" className="text-sm font-semibold">
-                        District
-                        <span className="text-muted-foreground font-normal ml-1">(Optional)</span>
-                      </Label>
-                      <Select
-                        value={newUser.district}
-                        onValueChange={(value) => setNewUser({ ...newUser, district: value })}
-                        disabled={isSubmitting || formOptionsLoading || !newUser.region}
-                      >
-                        <SelectTrigger className="h-11">
-                          <SelectValue
-                            placeholder={
-                              !newUser.region
-                                ? 'Select a region first'
-                                : districtOptions.length === 0
-                                  ? 'No districts for this region'
-                                  : 'Select district (optional)'
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {districtOptions.map((district) => (
-                            <SelectItem key={district} value={district}>
-                              {district}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-6 border-t-2">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowAddDialog(false)}
-                  disabled={isSubmitting}
-                  className="h-11 px-6 font-semibold"
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleAddUser} 
-                  disabled={
-                    isSubmitting || formOptionsLoading || !formOptions || !newUserPasswordReady
-                  }
-                  className="min-w-[140px] h-11 px-6 font-semibold shadow-lg bg-[#193cb8] hover:bg-[#142f9e] text-white"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <div className="h-4 w-4 mr-2 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Create User
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-        )}
-        </div>
-      </div>
-
-      {/* User Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Users className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
-            <p className="text-2xl font-bold">{totalUsers}</p>
-            <p className="text-sm text-muted-foreground">Total Users</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Crown className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
-            <p className="text-2xl font-bold">{adminUsers}</p>
-            <p className="text-sm text-muted-foreground">Administrators</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <UserCheck className="h-8 w-8 mx-auto mb-2 text-green-600" />
-            <p className="text-2xl font-bold">{activeUsers}</p>
-            <p className="text-sm text-muted-foreground">Active Users</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <UserX className="h-8 w-8 mx-auto mb-2 text-red-600" />
-            <p className="text-2xl font-bold">{suspendedUsers}</p>
-            <p className="text-sm text-muted-foreground">Suspended</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Users Table */}
-      <Card>
-        <CardHeader className="space-y-4">
-          <CardTitle>User Registry</CardTitle>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="relative md:col-span-2">
+      <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 overflow-hidden border-0">
+        <CardHeader className="space-y-4 border-b border-border/60 bg-muted/20 pb-4">
+          <div>
+            <CardTitle className="text-lg font-semibold">User registry</CardTitle>
+            <CardDescription className="mt-1">
+              {listTotal} user{listTotal === 1 ? '' : 's'} · search and filter
+            </CardDescription>
+          </div>
+          <div className="flex flex-col lg:flex-row gap-3">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                className="pl-9"
-                placeholder="Search by name, username, or email…"
+                className="pl-9 h-10 bg-background/80"
+                placeholder="Name, username, email…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
             <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger>
+              <SelectTrigger className="h-10 w-full sm:w-[180px] bg-background/80">
                 <SelectValue placeholder="All roles" />
               </SelectTrigger>
               <SelectContent>
@@ -1083,7 +613,7 @@ export function UserManagement() {
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
+              <SelectTrigger className="h-10 w-full sm:w-[160px] bg-background/80">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
               <SelectContent>
@@ -1093,22 +623,52 @@ export function UserManagement() {
                 <SelectItem value="suspended">Suspended</SelectItem>
               </SelectContent>
             </Select>
+            {hasActiveFilters ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-10 text-muted-foreground"
+                onClick={() => {
+                  setSearchTerm('');
+                  setRoleFilter('all');
+                  setStatusFilter('all');
+                }}
+              >
+                Clear
+              </Button>
+            ) : null}
           </div>
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+            Super admin accounts are hidden from non–super admin viewers.
+          </p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
+          <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
           {filteredUsers.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground">No users match your filters.</div>
+            <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+              <Users className="h-10 w-10 text-muted-foreground/50 mb-3" />
+              <p className="text-sm font-medium">No users match your filters</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {hasActiveFilters ? 'Clear filters or adjust search.' : 'Add a user to get started.'}
+              </p>
+            </div>
           ) : (
+          <ScrollableTable
+            className="border-0 shadow-none ring-0"
+            maxHeightClass="max-h-[min(70vh,560px)]"
+            minWidthClass="min-w-[960px]"
+          >
           <Table>
             <TableHeader>
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableHead>User</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Assignment</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Last Login</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1135,7 +695,9 @@ export function UserManagement() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>{getRoleBadge(userItem.role)}</TableCell>
+                  <TableCell>
+                    <UserRoleBadge role={userItem.role} />
+                  </TableCell>
                   <TableCell>
                     {userItem.stationName ? (
                       <div className="flex items-center space-x-1">
@@ -1154,13 +716,9 @@ export function UserManagement() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      {getStatusBadge(userItem.status)}
-                      {userItem.isOnline && (
-                        <Badge variant="outline" className="text-green-700 border-green-300">
-                          Online
-                        </Badge>
-                      )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <UserStatusBadge status={userItem.status} />
+                      {userItem.isOnline ? <UserOnlineBadge /> : null}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -1170,11 +728,13 @@ export function UserManagement() {
                       <span className="text-muted-foreground text-sm">Never</span>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm"
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label="View user"
                         onClick={() => {
                           setSelectedUser(userItem);
                           setShowDetailsDialog(true);
@@ -1183,32 +743,44 @@ export function UserManagement() {
                         <Eye className="h-4 w-4" />
                       </Button>
                       <Button
-                        variant="outline"
-                        size="sm"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label="Edit user"
                         disabled={!canModify}
                         onClick={() => openEditUser(userItem as EditableUser)}
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button 
-                        variant={userItem.status === 'active' ? 'destructive' : 'default'}
-                        size="sm"
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          'h-8 w-8',
+                          userItem.status === 'active' && 'text-destructive hover:text-destructive'
+                        )}
+                        aria-label={userItem.status === 'active' ? 'Suspend user' : 'Activate user'}
                         onClick={() => toggleUserStatus(userItem.id)}
                         disabled={!canModify}
                       >
-                        {userItem.status === 'active' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                        {userItem.status === 'active' ? (
+                          <UserX className="h-4 w-4" />
+                        ) : (
+                          <UserCheck className="h-4 w-4" />
+                        )}
                       </Button>
-                      {canDeleteUsers && (
+                      {canDeleteUsers ? (
                         <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          aria-label="Delete user"
                           disabled={!canModify}
                           onClick={() => setUserToDelete(userItem as EditableUser)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      )}
+                      ) : null}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -1216,13 +788,18 @@ export function UserManagement() {
               })}
             </TableBody>
           </Table>
+          </ScrollableTable>
           )}
+          </div>
           <TablePagination
             page={page}
             pagination={listPagination}
-            onPageChange={setPage}
+            onPageChange={handlePageChange}
             loading={loading}
             itemLabel="users"
+            pageSize={pageSize}
+            onPageSizeChange={handlePageSizeChange}
+            alwaysShow
           />
         </CardContent>
       </Card>
@@ -1233,11 +810,47 @@ export function UserManagement() {
         user={userToEdit}
         formOptions={formOptions}
         formOptionsLoading={formOptionsLoading}
-        onSaved={fetchUsers}
+        onSaved={() => void fetchUsers({ silent: true })}
+      />
+
+      <UserCreateDialog
+        open={showAddDialog}
+        onOpenChange={handleAddDialogOpenChange}
+        form={newUser}
+        onFormChange={(patch) => setNewUser((prev) => ({ ...prev, ...patch }))}
+        formErrors={formErrors}
+        onClearFieldError={(field) =>
+          setFormErrors((prev) => {
+            const next = { ...prev };
+            delete next[field];
+            return next;
+          })
+        }
+        onRoleChange={(value) => {
+          setNewUser((prev) => ({ ...prev, role: value, stationId: '', region: '', district: '' }));
+          setFormErrors({});
+        }}
+        onPasswordChange={(password, confirmPassword) => {
+          setNewUser((prev) => ({ ...prev, password, confirmPassword }));
+          syncPasswordFieldErrors(password, confirmPassword);
+        }}
+        isSubmitting={isSubmitting}
+        formOptionsLoading={formOptionsLoading}
+        formOptions={formOptions}
+        selectedRoleOption={selectedRoleOption}
+        stationOptions={stationOptions}
+        regionOptions={regionOptions}
+        districtOptions={districtOptions}
+        showNewPassword={showNewPassword}
+        showConfirmPassword={showConfirmPassword}
+        onToggleNewPassword={() => setShowNewPassword((v) => !v)}
+        onToggleConfirmPassword={() => setShowConfirmPassword((v) => !v)}
+        passwordReady={newUserPasswordReady}
+        onSubmit={() => void handleAddUser()}
       />
 
       <AlertDialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete user account?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -1262,77 +875,23 @@ export function UserManagement() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* User Details Dialog */}
-      <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>User Details</DialogTitle>
-            <DialogDescription>
-              Complete information for {selectedUser?.fullName || 'the selected user'}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedUser && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="font-medium text-muted-foreground">Full Name</p>
-                  <p>{selectedUser.fullName}</p>
-                </div>
-                <div>
-                  <p className="font-medium text-muted-foreground">Username</p>
-                  <p>{selectedUser.username}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="font-medium text-muted-foreground">Email</p>
-                  <p>{selectedUser.email}</p>
-                </div>
-                <div>
-                  <p className="font-medium text-muted-foreground">Phone</p>
-                  <p>{selectedUser.phone || '—'}</p>
-                </div>
-                <div>
-                  <p className="font-medium text-muted-foreground">User ID</p>
-                  <p>{selectedUser.id}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="font-medium text-muted-foreground">Role</p>
-                  {getRoleBadge(selectedUser.role)}
-                </div>
-                <div>
-                  <p className="font-medium text-muted-foreground">Status</p>
-                  {getStatusBadge(selectedUser.status)}
-                </div>
-              </div>
-              {selectedUser.stationName && (
-                <div className="text-sm">
-                  <p className="font-medium text-muted-foreground">Assigned Station</p>
-                  <p>{selectedUser.stationName}</p>
-                </div>
-              )}
-              {selectedUser.region && (
-                <div className="text-sm">
-                  <p className="font-medium text-muted-foreground">Region/District</p>
-                  <p>{selectedUser.region}{selectedUser.district && ` - ${selectedUser.district}`}</p>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="font-medium text-muted-foreground">Created</p>
-                  <p>{formatDate(selectedUser.createdAt)}</p>
-                </div>
-                <div>
-                  <p className="font-medium text-muted-foreground">Last Login</p>
-                  <p>{selectedUser.lastLogin ? formatDate(selectedUser.lastLogin) : 'Never'}</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <UserDetailsDialog
+        open={showDetailsDialog}
+        onOpenChange={setShowDetailsDialog}
+        user={selectedUser}
+        canEdit={
+          selectedUser
+            ? canModifyUser(actorContext, selectedUser, isSuperAdmin(), hasPermission)
+            : false
+        }
+        onEdit={() => {
+          if (selectedUser) {
+            setShowDetailsDialog(false);
+            openEditUser(selectedUser as EditableUser);
+          }
+        }}
+      />
+      </div>
     </div>
   );
 }

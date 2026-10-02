@@ -11,6 +11,8 @@ import {
   Route,
   Shield,
   Users,
+  UserCheck,
+  Ticket,
   Zap,
 } from 'lucide-react';
 import type { UserRole } from '../AuthContext';
@@ -32,6 +34,7 @@ export type StatDefinition = {
   icon: LucideIcon;
   accent: 'blue' | 'emerald' | 'violet' | 'amber';
   format?: 'currency' | 'number';
+  hint?: string;
 };
 
 export type QuickActionDefinition = {
@@ -90,17 +93,40 @@ export function dashboardEyebrow(layout: DashboardLayout): string {
   }
 }
 
+export function showStationCommissionMetric(role?: UserRole): boolean {
+  return role === 'station_worker';
+}
+
 export function dashboardSubtitle(
   layout: DashboardLayout,
-  ctx: { stationName?: string; region?: string; district?: string }
+  ctx: {
+    stationName?: string;
+    region?: string;
+    district?: string;
+    role?: UserRole;
+    scopeLabel?: string | null;
+  }
 ): string {
+  const scoped =
+    ctx.scopeLabel != null && ctx.scopeLabel !== 'Your station'
+      ? `Scoped to ${ctx.scopeLabel} — `
+      : ctx.scopeLabel === 'Your station'
+        ? 'Your station only — '
+        : '';
+
   switch (layout) {
     case 'executive':
-      return 'Network-wide snapshot — fleet, revenue, and open safety cases.';
+      return ctx.scopeLabel
+        ? `${scoped}fleet, revenue, and safety KPIs for your assignment.`
+        : 'Network-wide snapshot — fleet, revenue, and open safety cases.';
     case 'station':
-      return `Today's departures, fleet, and revenue for ${ctx.stationName ?? 'your station'}.`;
+      return showStationCommissionMetric(ctx.role)
+        ? `Today's departures, fleet, and RISE commission for ${ctx.stationName ?? 'your station'}.`
+        : `Today's departures, fleet, and revenue for ${ctx.stationName ?? 'your station'}.`;
     case 'safety':
-      return 'Track reported incidents, investigations, and claims awaiting action.';
+      return ctx.scopeLabel
+        ? `${scoped}incidents and claims in your assignment area.`
+        : 'Track reported incidents, investigations, and claims awaiting action.';
     case 'claims':
       return 'Submit and track injury compensation after investigator approval.';
     case 'general':
@@ -113,43 +139,160 @@ export function dashboardSubtitle(
 export function statDefinitions(
   source: DashboardStatsSource,
   layout: DashboardLayout,
-  period: Period = 'daily'
+  period: Period = 'daily',
+  options?: { role?: UserRole; periodOffset?: number }
 ): StatDefinition[] {
+  const periodOffset = options?.periodOffset ?? 0;
+  const prior = periodOffset > 0;
+
   const revenueTitle =
     period === 'daily'
-      ? 'Revenue today'
+      ? prior
+        ? 'Revenue (selected day)'
+        : 'Revenue today'
       : period === 'yearly'
-        ? 'Revenue (YTD)'
-        : 'Revenue this month';
+        ? prior
+          ? 'Revenue (selected year)'
+          : 'Revenue (YTD)'
+        : prior
+          ? 'Revenue (selected month)'
+          : 'Revenue this month';
   const stationRevenueTitle =
     period === 'daily'
-      ? 'Station revenue today'
+      ? prior
+        ? 'Station revenue (selected day)'
+        : 'Station revenue today'
       : period === 'yearly'
-        ? 'Station revenue (YTD)'
-        : 'Station revenue this month';
+        ? prior
+          ? 'Station revenue (selected year)'
+          : 'Station revenue (YTD)'
+        : prior
+          ? 'Station revenue (selected month)'
+          : 'Station revenue this month';
+  const stationCommissionTitle =
+    period === 'daily'
+      ? prior
+        ? 'Station commission (selected day)'
+        : 'Station commission today'
+      : period === 'yearly'
+        ? prior
+          ? 'Station commission (selected year)'
+          : 'Station commission (YTD)'
+        : prior
+          ? 'Station commission (selected month)'
+          : 'Station commission this month';
+
+  const useCommission =
+    source === 'station' && showStationCommissionMetric(options?.role);
   if (source === 'admin') {
+    const tripsTitle =
+      period === 'daily'
+        ? prior
+          ? 'Trips (selected day)'
+          : 'Trips today'
+        : period === 'yearly'
+          ? prior
+            ? 'Trips (selected year)'
+            : 'Trips (YTD)'
+          : prior
+            ? 'Trips (selected month)'
+            : 'Trips this month';
+
+    const passengersTitle =
+      period === 'daily'
+        ? prior
+          ? 'Passengers (selected day)'
+          : 'Passengers today'
+        : period === 'yearly'
+          ? prior
+            ? 'Passengers (selected year)'
+            : 'Passengers (YTD)'
+          : prior
+            ? 'Passengers (selected month)'
+            : 'Passengers this month';
+
     return [
-      { key: 'totalUsers', title: 'System users', icon: Users, accent: 'blue' },
-      { key: 'totalStations', title: 'Active stations', icon: MapPin, accent: 'violet' },
-      { key: 'totalVehicles', title: 'Fleet vehicles', icon: Bus, accent: 'emerald' },
+      {
+        key: 'totalUsers',
+        title: 'System users',
+        icon: Users,
+        accent: 'blue',
+        hint: 'Staff accounts on RISE',
+      },
+      {
+        key: 'totalStations',
+        title: 'Active stations',
+        icon: MapPin,
+        accent: 'violet',
+        hint: 'Terminals nationwide',
+      },
+      {
+        key: 'totalVehicles',
+        title: 'Fleet vehicles',
+        icon: Bus,
+        accent: 'emerald',
+        hint: 'Registered road units',
+      },
       {
         key: 'monthlyRevenue',
         title: revenueTitle,
         icon: DollarSign,
         accent: 'amber',
         format: 'currency',
+        hint: 'Ticket & trip income',
+      },
+      {
+        key: 'totalTrips',
+        title: tripsTitle,
+        icon: Route,
+        accent: 'blue',
+        hint: 'Departures in range',
+      },
+      {
+        key: 'totalDrivers',
+        title: 'Licensed drivers',
+        icon: UserCheck,
+        accent: 'emerald',
+        hint: 'Active driver roster',
+      },
+      {
+        key: 'activeIncidents',
+        title: 'Open incidents',
+        icon: AlertTriangle,
+        accent: 'violet',
+        hint: 'Safety cases in progress',
+      },
+      {
+        key: 'totalPassengers',
+        title: passengersTitle,
+        icon: Ticket,
+        accent: 'amber',
+        hint: 'Bookings & manifests',
       },
     ];
   }
 
   if (source === 'station') {
+    const tripsTitle =
+      period === 'daily' && !prior
+        ? "Today's trips"
+        : period === 'daily'
+          ? 'Trips (selected day)'
+          : period === 'monthly'
+            ? prior
+              ? 'Trips (selected month)'
+              : 'Trips this month'
+            : prior
+              ? 'Trips (selected year)'
+              : 'Trips (YTD)';
+
     return [
       { key: 'stationVehicles', title: 'Station fleet', icon: Bus, accent: 'blue' },
-      { key: 'todayTrips', title: "Today's trips", icon: Route, accent: 'emerald' },
+      { key: 'todayTrips', title: tripsTitle, icon: Route, accent: 'emerald' },
       { key: 'activeDrivers', title: 'Active drivers', icon: Users, accent: 'violet' },
       {
-        key: 'stationRevenue',
-        title: stationRevenueTitle,
+        key: useCommission ? 'stationCommission' : 'stationRevenue',
+        title: useCommission ? stationCommissionTitle : stationRevenueTitle,
         icon: DollarSign,
         accent: 'amber',
         format: 'currency',

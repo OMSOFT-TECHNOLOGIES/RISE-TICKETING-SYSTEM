@@ -5,6 +5,8 @@ export type StationPickerOption = {
   name: string;
   city?: string;
   region?: string;
+  district?: string;
+  code?: string;
 };
 
 /** Align list IDs with backend IdFormatter (STN001) used on users, vehicles, trips. */
@@ -29,6 +31,8 @@ export function parseStationsFromApiResponse(data: unknown): StationPickerOption
         name: String(station.name ?? station.code ?? id),
         city: station.city != null ? String(station.city) : undefined,
         region: station.region != null ? String(station.region) : undefined,
+        district: station.district != null ? String(station.district) : undefined,
+        code: station.code != null ? String(station.code) : undefined,
       };
     })
     .filter((s): s is StationPickerOption => s != null);

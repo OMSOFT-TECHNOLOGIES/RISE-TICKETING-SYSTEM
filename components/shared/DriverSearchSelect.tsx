@@ -1,8 +1,17 @@
-import React, { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
-import { Input } from '../ui/input';
+import React, { useState } from 'react';
+import { Check, ChevronsUpDown } from 'lucide-react';
+import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Avatar, AvatarFallback } from '../ui/avatar';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../ui/command';
 import { cn } from '../ui/utils';
 
 export type DriverOption = {
@@ -29,6 +38,9 @@ interface DriverSearchSelectProps {
   onValueChange: (driverId: string) => void;
   label?: string;
   placeholder?: string;
+  emptyMessage?: string;
+  disabled?: boolean;
+  hideLabel?: boolean;
 }
 
 export function DriverSearchSelect({
@@ -37,72 +49,92 @@ export function DriverSearchSelect({
   onValueChange,
   label = 'Driver',
   placeholder = 'Search by name, ID, or license…',
+  emptyMessage = 'No drivers found.',
+  disabled = false,
+  hideLabel = false,
 }: DriverSearchSelectProps) {
-  const [query, setQuery] = useState('');
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return drivers;
-    return drivers.filter((d) => {
-      const id = String(d.id).toLowerCase();
-      const name = String(d.name ?? '').toLowerCase();
-      const lic = String(d.licenseNumber ?? '').toLowerCase();
-      const phone = String(d.phone ?? '').toLowerCase();
-      return id.includes(q) || name.includes(q) || lic.includes(q) || phone.includes(q);
-    });
-  }, [drivers, query]);
-
+  const [open, setOpen] = useState(false);
   const selected = drivers.find((d) => String(d.id) === String(value));
 
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={placeholder}
-          className="pl-10"
-        />
-      </div>
-      <div className="max-h-48 overflow-y-auto rounded-md border divide-y">
-        {filtered.length === 0 ? (
-          <p className="p-3 text-sm text-muted-foreground text-center">No drivers match your search</p>
-        ) : (
-          filtered.map((driver) => (
-            <button
-              key={driver.id}
-              type="button"
-              className={cn(
-                'flex w-full items-center gap-3 p-3 text-left hover:bg-muted/60 transition-colors',
-                String(value) === String(driver.id) && 'bg-[#193cb8]/10'
-              )}
-              onClick={() => onValueChange(String(driver.id))}
-            >
-              <Avatar className="h-9 w-9 shrink-0">
-                {driver.photoUrl ? (
-                  <img src={driver.photoUrl} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <AvatarFallback className="text-xs">{initials(driver.name || '?')}</AvatarFallback>
-                )}
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <p className="font-medium text-sm truncate">{driver.name}</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {driver.id}
-                  {driver.licenseNumber ? ` · ${driver.licenseNumber}` : ''}
-                </p>
-              </div>
-            </button>
-          ))
-        )}
-      </div>
-      {selected && (
-        <p className="text-xs text-muted-foreground">
-          Selected: <span className="font-medium text-foreground">{selected.name}</span> ({selected.id})
-        </p>
-      )}
+      {!hideLabel ? <Label>{label}</Label> : null}
+      <Popover modal open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            disabled={disabled}
+            className="w-full justify-between font-normal h-auto min-h-10 py-2"
+          >
+            {selected ? (
+              <span className="flex items-center gap-2 min-w-0 text-left">
+                <Avatar className="h-8 w-8 shrink-0">
+                  {selected.photoUrl ? (
+                    <img src={selected.photoUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <AvatarFallback className="text-xs">
+                      {initials(selected.name || '?')}
+                    </AvatarFallback>
+                  )}
+                </Avatar>
+                <span className="truncate">
+                  <span className="font-medium">{selected.name}</span>
+                  <span className="text-muted-foreground text-xs block truncate">{selected.id}</span>
+                </span>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">{placeholder}</span>
+            )}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+          <Command>
+            <CommandInput placeholder="Search drivers…" />
+            <CommandList>
+              <CommandEmpty>{emptyMessage}</CommandEmpty>
+              <CommandGroup>
+                {drivers.map((driver) => (
+                  <CommandItem
+                    key={driver.id}
+                    value={`${driver.name} ${driver.id} ${driver.licenseNumber ?? ''} ${driver.phone ?? ''}`}
+                    onSelect={() => {
+                      onValueChange(String(driver.id));
+                      setOpen(false);
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        'mr-2 h-4 w-4 shrink-0',
+                        String(value) === String(driver.id) ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    <Avatar className="h-8 w-8 shrink-0 mr-2">
+                      {driver.photoUrl ? (
+                        <img src={driver.photoUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <AvatarFallback className="text-xs">
+                          {initials(driver.name || '?')}
+                        </AvatarFallback>
+                      )}
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm truncate">{driver.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {driver.id}
+                        {driver.licenseNumber ? ` · ${driver.licenseNumber}` : ''}
+                      </p>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

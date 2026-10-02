@@ -15,7 +15,6 @@ import {
   DollarSign, 
   Plus, 
   Search, 
-  Filter,
   MoreHorizontal,
   Edit,
   Eye,
@@ -27,7 +26,6 @@ import {
   AlertTriangle,
   CheckCircle,
   Building,
-  Loader2,
   RefreshCw
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
@@ -42,10 +40,15 @@ import { Check, ChevronsUpDown } from 'lucide-react';
 import { notify } from './utils/notify';
 import { cn } from './ui/utils';
 import { GHANA_REGIONS } from './constants/ghanaRegions';
-import { DISTRICTS_BY_REGION } from './constants/ghanaDistricts';
+import { getDistrictsForRegion } from './constants/ghanaDistricts';
 import { suggestNextStationCode } from './utils/stationCode';
 import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
 import { TablePagination } from './shared/TablePagination';
+import { ScrollableTable } from './shared/ScrollableTable';
+import { PageHeader } from './shared/PageHeader';
+import { DashboardStatCard } from './Dashboard/DashboardStatCard';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
+import { filterStationsForUser } from './utils/stationScope';
 
 export function StationManagement() {
   const { user } = useAuth();
@@ -85,6 +88,8 @@ export function StationManagement() {
     page,
     setPage,
     pagination,
+    pageSize,
+    setPageSize,
   } = usePaginatedEntityList<any>({
     fetchFn: fetchStationsPage,
     entityKey: 'stations',
@@ -158,11 +163,11 @@ export function StationManagement() {
   });
 
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
-  
-  // Filter stations based on user role
-  const userStations = isAdmin 
-    ? stations 
-    : stations.filter(s => s.id === user?.stationId);
+
+  const userStations = React.useMemo(
+    () => filterStationsForUser(stations, user),
+    [stations, user]
+  );
 
   const getStatusBadge = (status: string) => {
     const configs = {
@@ -370,246 +375,295 @@ export function StationManagement() {
     setShowDeleteDialog(true);
   };
 
-  // Loading state
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
-          <p className="mt-2 text-gray-600">Loading stations...</p>
-        </div>
-      </div>
-    );
-  }
+  const totalStationCount = pagination?.totalItems ?? userStations.length;
+  const pageVehicles = userStations.reduce((sum, s) => sum + (s.vehicles || 0), 0);
+  const pageDrivers = userStations.reduce((sum, s) => sum + (s.drivers || 0), 0);
+  const pageRevenue = userStations.reduce((sum, s) => sum + (s.monthlyRevenue || 0), 0);
 
-  // Error state
-  if (error) {
+  const pageDescription = isAdmin
+    ? 'Manage RISE transport terminals nationwide — codes, managers, unions, and operational status.'
+    : `Stations in your scope${user?.stationName ? ` · ${user.stationName}` : ''}.`;
+
+  if (loading && userStations.length === 0 && !error) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <p className="text-red-600 mb-4">{error}</p>
-          <Button onClick={() => void refresh({ toastOnError: true })}>Retry</Button>
-        </div>
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading stations…" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Station Management</h1>
-          <p className="text-gray-600">
-            {isAdmin 
-              ? 'Manage all RISE transport stations across Ghana' 
-              : `Manage ${user?.stationName || 'your station'}`
-            }
-          </p>
-        </div>
-        {isAdmin && (
-          <Button onClick={openAddStationDialog}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Station
-          </Button>
-        )}
-      </div>
+    <div className="min-h-full rise-dashboard-page">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+        <PageHeader
+          title="Station management"
+          description={pageDescription}
+          actions={
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refresh({ toastOnError: true })}
+                disabled={loading}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+              {isAdmin ? (
+                <Button className="shadow-sm" onClick={openAddStationDialog}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add station
+                </Button>
+              ) : null}
+            </>
+          }
+        />
 
-      {/* Station Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Building className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
-            <p className="text-2xl font-bold">{pagination?.totalItems ?? userStations.length}</p>
-            <p className="text-sm text-gray-600">Total Stations</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Bus className="h-8 w-8 mx-auto mb-2 text-green-600" />
-            <p className="text-2xl font-bold">{userStations.reduce((sum, s) => sum + (s.vehicles || 0), 0)}</p>
-            <p className="text-sm text-gray-600">Total Vehicles</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Users className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
-            <p className="text-2xl font-bold">{userStations.reduce((sum, s) => sum + (s.drivers || 0), 0)}</p>
-            <p className="text-sm text-gray-600">Total Drivers</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <DollarSign className="h-8 w-8 mx-auto mb-2 text-yellow-600" />
-            <p className="text-2xl font-bold">₵{userStations.reduce((sum, s) => sum + (s.monthlyRevenue || 0), 0).toLocaleString()}</p>
-            <p className="text-sm text-gray-600">Monthly Revenue</p>
-          </CardContent>
-        </Card>
-      </div>
+        {error ? (
+          <RiseStatusAlert type="error" title="Could not load stations">
+            {error}
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => void refresh({ toastOnError: true })}
+            >
+              Try again
+            </Button>
+          </RiseStatusAlert>
+        ) : null}
 
-      {/* Search and Filter */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Search and Filter</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <Label htmlFor="search">Search Stations</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  id="search"
-                  placeholder="Search by name, code, city, or manager..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="status">Status Filter</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="maintenance">Maintenance</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {isAdmin && (
+        <section className="rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm p-4 sm:p-5 ring-1 ring-border/40">
+          <h2 className="text-sm font-semibold tracking-tight mb-4">Overview</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+            <DashboardStatCard
+              title="Stations"
+              value={totalStationCount}
+              icon={Building}
+              accent="blue"
+              hint="Total in registry"
+            />
+            <DashboardStatCard
+              title="Vehicles (page)"
+              value={pageVehicles}
+              icon={Bus}
+              accent="emerald"
+              hint="Fleet on visible rows"
+            />
+            <DashboardStatCard
+              title="Drivers (page)"
+              value={pageDrivers}
+              icon={Users}
+              accent="violet"
+              hint="Assigned on visible rows"
+            />
+            <DashboardStatCard
+              title="Revenue (page)"
+              value={`₵${pageRevenue.toLocaleString()}`}
+              icon={DollarSign}
+              accent="amber"
+              hint="Monthly sum · current page"
+            />
+          </div>
+        </section>
+
+        <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 overflow-hidden">
+          <CardHeader className="space-y-4 border-b border-border/60 bg-muted/20 pb-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <Label htmlFor="region">Region Filter</Label>
-                <Select value={regionFilter} onValueChange={setRegionFilter}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
+                <CardTitle className="text-lg font-semibold">Station registry</CardTitle>
+                <CardDescription className="mt-1">
+                  {totalStationCount} station{totalStationCount === 1 ? '' : 's'} · filter and search
+                </CardDescription>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto lg:min-w-[520px]">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="search"
+                    placeholder="Name, code, city, manager…"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 h-10 bg-background/80"
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="h-10 w-full sm:w-[140px] bg-background/80">
+                    <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Regions</SelectItem>
-                    {GHANA_REGIONS.map((region) => (
-                      <SelectItem key={region} value={region}>
-                        {region}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="all">All status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
                   </SelectContent>
                 </Select>
+                {isAdmin ? (
+                  <Select value={regionFilter} onValueChange={setRegionFilter}>
+                    <SelectTrigger className="h-10 w-full sm:w-[160px] bg-background/80">
+                      <SelectValue placeholder="Region" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All regions</SelectItem>
+                      {GHANA_REGIONS.map((region) => (
+                        <SelectItem key={region} value={region}>
+                          {region}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
               </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Stations Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Station Registry ({pagination?.totalItems ?? userStations.length} stations)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Station</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Manager</TableHead>
-                <TableHead>Union</TableHead>
-                <TableHead>Capacity</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Performance</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {userStations.map((station) => (
-                <TableRow key={station.id}>
-                  <TableCell>
-                    <div>
-                      <p className="font-medium">{station.name || 'N/A'}</p>
-                      <p className="text-sm text-gray-500">{station.code || 'N/A'}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="text-sm">{station.city || 'N/A'}</p>
-                      <p className="text-sm text-gray-500">{station.region || 'N/A'}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="text-sm">{station.managerName || 'N/A'}</p>
-                      <p className="text-sm text-gray-500">{station.phone || 'N/A'}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="text-sm">{station.unionName || 'N/A'}</p>
-                      <p className="text-sm text-gray-500">{station.unionAcronym || ''}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="text-sm">{station.capacity || 'N/A'} passengers</p>
-                      <p className="text-sm text-gray-500">{station.platforms || 'N/A'} platforms</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>{getStatusBadge(station.status)}</TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="text-sm">{station.dailyTrips || 0} trips/day</p>
-                      <p className="text-sm text-gray-500">₵{station.monthlyRevenue?.toLocaleString() || '0'}/month</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleViewStation(station)}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          View Details
-                        </DropdownMenuItem>
-                        {isAdmin && (
-                          <>
-                            <DropdownMenuItem onClick={() => handleEdit(station)}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit Station
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => confirmDelete(station)}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete Station
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <TablePagination
-            page={page}
-            pagination={pagination}
-            onPageChange={setPage}
-            loading={loading}
-            itemLabel="stations"
-          />
-        </CardContent>
-      </Card>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
+              {userStations.length === 0 ? (
+                <div className="py-16 text-center">
+                  <MapPin className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                  <p className="text-sm font-medium">No stations found</p>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                    {searchTerm.trim() || statusFilter !== 'all' || regionFilter !== 'all'
+                      ? 'Adjust filters or clear search to see more results.'
+                      : isAdmin
+                        ? 'Add a station to begin building the network registry.'
+                        : 'No stations match your access scope.'}
+                  </p>
+                  {isAdmin && !searchTerm.trim() && statusFilter === 'all' && regionFilter === 'all' ? (
+                    <Button className="mt-4" onClick={openAddStationDialog}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add station
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                <ScrollableTable
+                  className="border-0 shadow-none ring-0"
+                  maxHeightClass="max-h-[min(70vh,560px)]"
+                  minWidthClass="min-w-[1050px]"
+                >
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead>Station</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Manager</TableHead>
+                        <TableHead>Union</TableHead>
+                        <TableHead>Capacity</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Performance</TableHead>
+                        <TableHead className="text-right w-[72px]">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {userStations.map((station) => (
+                        <TableRow key={station.id}>
+                          <TableCell>
+                            <div className="flex items-start gap-3">
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-mono text-xs font-bold text-primary">
+                                {(station.code || '—').toString().slice(-3)}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="font-medium truncate max-w-[180px]">
+                                  {station.name || 'N/A'}
+                                </p>
+                                <p className="text-xs text-muted-foreground font-mono">
+                                  {station.code || 'N/A'}
+                                </p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              <p>{station.city || '—'}</p>
+                              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                                <MapPin className="h-3 w-3 shrink-0" />
+                                {station.region || '—'}
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="max-w-[160px]">
+                              <p className="text-sm truncate">{station.managerName || '—'}</p>
+                              {station.phone ? (
+                                <p className="text-xs text-muted-foreground truncate">{station.phone}</p>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="max-w-[140px]">
+                              <p className="text-sm truncate">{station.unionName || '—'}</p>
+                              {station.unionAcronym ? (
+                                <p className="text-xs text-muted-foreground">{station.unionAcronym}</p>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <p className="text-sm tabular-nums">{station.capacity ?? '—'} pax</p>
+                            <p className="text-xs text-muted-foreground">
+                              {station.platforms ?? '—'} platforms
+                            </p>
+                          </TableCell>
+                          <TableCell>{getStatusBadge(station.status)}</TableCell>
+                          <TableCell>
+                            <p className="text-sm tabular-nums">{station.dailyTrips || 0} trips/day</p>
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              ₵{(station.monthlyRevenue ?? 0).toLocaleString()}/mo
+                            </p>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0" aria-label="Station actions">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="rounded-xl">
+                                <DropdownMenuItem onClick={() => handleViewStation(station)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View details
+                                </DropdownMenuItem>
+                                {isAdmin ? (
+                                  <>
+                                    <DropdownMenuItem onClick={() => handleEdit(station)}>
+                                      <Edit className="mr-2 h-4 w-4" />
+                                      Edit station
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => confirmDelete(station)}
+                                      className="text-destructive focus:text-destructive"
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      Delete station
+                                    </DropdownMenuItem>
+                                  </>
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollableTable>
+              )}
+            </div>
+            <TablePagination
+              page={page}
+              pagination={pagination}
+              onPageChange={setPage}
+              loading={loading}
+              itemLabel="stations"
+              pageSize={pageSize}
+              onPageSizeChange={setPageSize}
+              alwaysShow
+            />
+          </CardContent>
+        </Card>
 
       {/* Add Station Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl rounded-2xl">
           <DialogHeader>
             <DialogTitle>Add New Station</DialogTitle>
             <DialogDescription>
@@ -693,8 +747,8 @@ export function StationManagement() {
                 <SelectTrigger id="district">
                   <SelectValue placeholder={stationForm.region ? 'Select district' : 'Select region first'} />
                 </SelectTrigger>
-                <SelectContent>
-                  {(DISTRICTS_BY_REGION[stationForm.region] ?? []).map((district) => (
+                <SelectContent className="max-h-72">
+                  {getDistrictsForRegion(stationForm.region).map((district) => (
                     <SelectItem key={district} value={district}>
                       {district}
                     </SelectItem>
@@ -787,7 +841,7 @@ export function StationManagement() {
 
       {/* Edit Station Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl rounded-2xl">
           <DialogHeader>
             <DialogTitle>Edit Station</DialogTitle>
             <DialogDescription>
@@ -838,21 +892,21 @@ export function StationManagement() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-region">Region *</Label>
-                <Select value={stationForm.region} onValueChange={(value) => setStationForm({...stationForm, region: value})}>
+                <Select
+                  value={stationForm.region}
+                  onValueChange={(value) =>
+                    setStationForm({ ...stationForm, region: value, district: '' })
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select region" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Greater Accra">Greater Accra</SelectItem>
-                    <SelectItem value="Ashanti">Ashanti</SelectItem>
-                    <SelectItem value="Western">Western</SelectItem>
-                    <SelectItem value="Eastern">Eastern</SelectItem>
-                    <SelectItem value="Volta">Volta</SelectItem>
-                    <SelectItem value="Northern">Northern</SelectItem>
-                    <SelectItem value="Upper East">Upper East</SelectItem>
-                    <SelectItem value="Upper West">Upper West</SelectItem>
-                    <SelectItem value="Central">Central</SelectItem>
-                    <SelectItem value="Brong Ahafo">Brong Ahafo</SelectItem>
+                    {GHANA_REGIONS.map((region) => (
+                      <SelectItem key={region} value={region}>
+                        {region}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -860,12 +914,22 @@ export function StationManagement() {
 
             <div className="space-y-2">
               <Label htmlFor="edit-district">District *</Label>
-              <Input
-                id="edit-district"
-                value={stationForm.district}
-                onChange={(e) => setStationForm({...stationForm, district: e.target.value})}
-                placeholder="e.g., Accra Metropolitan"
-              />
+              <Select
+                value={stationForm.district || undefined}
+                onValueChange={(value) => setStationForm({ ...stationForm, district: value })}
+                disabled={!stationForm.region}
+              >
+                <SelectTrigger id="edit-district">
+                  <SelectValue placeholder={stationForm.region ? 'Select district' : 'Select region first'} />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {getDistrictsForRegion(stationForm.region).map((district) => (
+                    <SelectItem key={district} value={district}>
+                      {district}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -1016,7 +1080,7 @@ export function StationManagement() {
 
       {/* View Station Dialog */}
       <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl rounded-2xl">
           <DialogHeader>
             <DialogTitle>Station Details</DialogTitle>
             <DialogDescription>
@@ -1228,7 +1292,7 @@ export function StationManagement() {
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
+        <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-red-600" />
@@ -1255,6 +1319,7 @@ export function StationManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
     </div>
   );
 }

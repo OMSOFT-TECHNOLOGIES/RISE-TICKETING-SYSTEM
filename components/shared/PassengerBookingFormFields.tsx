@@ -24,6 +24,7 @@ export interface PassengerBookingFormValues {
   emergencyContactName: string;
   emergencyContactPhone: string;
   emergencyContactRelationship: string;
+  biometricReference?: string;
 }
 
 export const EMPTY_PASSENGER_BOOKING_FORM: PassengerBookingFormValues = {
@@ -39,6 +40,7 @@ export const EMPTY_PASSENGER_BOOKING_FORM: PassengerBookingFormValues = {
   emergencyContactName: '',
   emergencyContactPhone: '',
   emergencyContactRelationship: '',
+  biometricReference: '',
 };
 
 const RELATIONSHIP_OPTIONS = [
@@ -58,6 +60,7 @@ interface PassengerBookingFormFieldsProps {
   onChange: (updates: Partial<PassengerBookingFormValues>) => void;
   idPrefix?: string;
   showSeatCount?: boolean;
+  maxSeats?: number;
   showSeatNumber?: boolean;
   showRoutePoints?: boolean;
   showFare?: boolean;
@@ -76,6 +79,7 @@ export function PassengerBookingFormFields({
   onChange,
   idPrefix = 'pb',
   showSeatCount = false,
+  maxSeats = 99,
   showSeatNumber = false,
   showRoutePoints = false,
   showFare = false,
@@ -166,12 +170,21 @@ export function PassengerBookingFormFields({
               id={`${idPrefix}-seats`}
               type="number"
               min={1}
-              max={5}
+              max={Math.max(1, maxSeats)}
               value={values.seats}
-              onChange={(e) =>
-                onChange({ seats: Math.max(1, parseInt(e.target.value, 10) || 1) })
-              }
+              onChange={(e) => {
+                const parsed = parseInt(e.target.value, 10);
+                const capped = Number.isNaN(parsed)
+                  ? 1
+                  : Math.min(Math.max(1, parsed), Math.max(1, maxSeats));
+                onChange({ seats: capped });
+              }}
             />
+            {maxSeats > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Up to {maxSeats} seat{maxSeats === 1 ? '' : 's'} available on this trip
+              </p>
+            ) : null}
           </div>
         )}
         {showSeatNumber && (

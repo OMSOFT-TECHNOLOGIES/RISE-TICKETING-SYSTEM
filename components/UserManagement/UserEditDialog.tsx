@@ -1,12 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { AlertCircle, Building, Loader2 } from 'lucide-react';
+import { AlertCircle, Building, Loader2, Pencil, Shield, Users } from 'lucide-react';
 import { userApi } from '../utils/api';
 import { notify } from '../utils/notify';
+import {
+  USER_FORM_REGIONS,
+  userFormDistrictsForRegion,
+} from './userFormGeoOptions';
+import { UserFieldError, UserFormSection, userFieldClass } from './userFormUi';
 
 export type UserFormRoleOption = {
   value: string;
@@ -84,10 +97,8 @@ export function UserEditDialog({
     [formOptions, form?.role]
   );
 
-  const districtOptions =
-    form?.region && formOptions?.districtsByRegion
-      ? formOptions.districtsByRegion[form.region] ?? []
-      : [];
+  const regionOptions = USER_FORM_REGIONS;
+  const districtOptions = userFormDistrictsForRegion(form?.region);
 
   const validate = () => {
     const next: Record<string, string> = {};
@@ -153,195 +164,205 @@ export function UserEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Edit User — {form.username}</DialogTitle>
-          <DialogDescription>Update account details, role, and status.</DialogDescription>
+      <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden rounded-2xl max-h-[min(92dvh,calc(100%-2rem))] flex flex-col">
+        <DialogHeader className="border-b border-border/80 bg-gradient-to-br from-muted/50 to-background px-6 py-5 shrink-0">
+          <div className="flex items-start gap-4 pr-6">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/20">
+              <Pencil className="h-5 w-5" strokeWidth={2.25} />
+            </span>
+            <div className="space-y-1 min-w-0">
+              <DialogTitle className="text-xl font-semibold tracking-tight">Edit user</DialogTitle>
+              <DialogDescription className="text-sm font-mono">@{form.username}</DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="edit-fullName">Full Name</Label>
-            <Input
-              id="edit-fullName"
-              value={form.fullName}
-              onChange={(e) => setForm({ ...form, fullName: e.target.value })}
-              disabled={submitting}
-            />
-            {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <DialogBody className="px-6 py-5 space-y-8 flex-1 overflow-y-auto max-h-[min(58vh,520px)]">
+          <UserFormSection title="Profile" description="Contact details and display name." icon={Users}>
             <div className="space-y-2">
-              <Label htmlFor="edit-email">Email</Label>
+              <Label htmlFor="edit-fullName">Full name</Label>
               <Input
-                id="edit-email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                id="edit-fullName"
+                value={form.fullName}
+                onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+                className={userFieldClass(Boolean(errors.fullName))}
                 disabled={submitting}
               />
-              {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
+              <UserFieldError message={errors.fullName} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-phone">Phone</Label>
-              <Input
-                id="edit-phone"
-                value={form.phone ?? ''}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                disabled={submitting}
-              />
-              {errors.phone && <p className="text-sm text-destructive">{errors.phone}</p>}
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Role</Label>
-              <Select
-                value={form.role}
-                onValueChange={(value) =>
-                  setForm({ ...form, role: value, stationId: '', region: '', district: '' })
-                }
-                disabled={submitting || formOptionsLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(formOptions?.roles ?? []).map((role) => (
-                    <SelectItem key={role.value} value={role.value}>
-                      {role.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(value) => setForm({ ...form, status: value })}
-                disabled={submitting}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {selectedRoleOption?.requiresStation && (
-            <div className="space-y-2">
-              <Label>Assigned Station</Label>
-              <Select
-                value={form.stationId ?? ''}
-                onValueChange={(value) => setForm({ ...form, stationId: value })}
-                disabled={submitting || formOptionsLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select station" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(formOptions?.stations ?? []).map((station) => (
-                    <SelectItem key={station.id} value={station.id}>
-                      <div className="flex items-center gap-2">
-                        <Building className="h-4 w-4" />
-                        {station.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.stationId && <p className="text-sm text-destructive">{errors.stationId}</p>}
-            </div>
-          )}
-
-          {selectedRoleOption?.requiresRegion && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Region</Label>
-                <Select
-                  value={form.region ?? ''}
-                  onValueChange={(value) => setForm({ ...form, region: value, district: '' })}
-                  disabled={submitting || formOptionsLoading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select region" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(formOptions?.regions ?? []).map((region) => (
-                      <SelectItem key={region} value={region}>
-                        {region}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.region && <p className="text-sm text-destructive">{errors.region}</p>}
+                <Label htmlFor="edit-email">Email</Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className={userFieldClass(Boolean(errors.email))}
+                  disabled={submitting}
+                />
+                <UserFieldError message={errors.email} />
               </div>
               <div className="space-y-2">
-                <Label>District (optional)</Label>
+                <Label htmlFor="edit-phone">Phone</Label>
+                <Input
+                  id="edit-phone"
+                  value={form.phone ?? ''}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  className={userFieldClass(Boolean(errors.phone))}
+                  disabled={submitting}
+                />
+                <UserFieldError message={errors.phone} />
+              </div>
+            </div>
+          </UserFormSection>
+
+          <UserFormSection title="Access" description="Role, status, and assignment." icon={Shield}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Role</Label>
                 <Select
-                  value={form.district ?? ''}
-                  onValueChange={(value) => setForm({ ...form, district: value })}
-                  disabled={submitting || !form.region}
+                  value={form.role}
+                  onValueChange={(value) =>
+                    setForm({ ...form, role: value, stationId: '', region: '', district: '' })
+                  }
+                  disabled={submitting || formOptionsLoading}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select district" />
+                  <SelectTrigger className={userFieldClass(false)}>
+                    <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {districtOptions.map((district) => (
-                      <SelectItem key={district} value={district}>
-                        {district}
+                    {(formOptions?.roles ?? []).map((role) => (
+                      <SelectItem key={role.value} value={role.value}>
+                        {role.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select
+                  value={form.status}
+                  onValueChange={(value) => setForm({ ...form, status: value })}
+                  disabled={submitting}
+                >
+                  <SelectTrigger className={userFieldClass(false)}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-          )}
 
-          {formOptionsLoading && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading form options…
-            </div>
-          )}
+            {selectedRoleOption?.requiresStation ? (
+              <div className="space-y-2">
+                <Label>Assigned station</Label>
+                <Select
+                  value={form.stationId ?? ''}
+                  onValueChange={(value) => setForm({ ...form, stationId: value })}
+                  disabled={submitting || formOptionsLoading}
+                >
+                  <SelectTrigger className={userFieldClass(Boolean(errors.stationId))}>
+                    <SelectValue placeholder="Select station" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(formOptions?.stations ?? []).map((station) => (
+                      <SelectItem key={station.id} value={station.id}>
+                        <div className="flex items-center gap-2">
+                          <Building className="h-4 w-4 shrink-0 opacity-70" />
+                          {station.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <UserFieldError message={errors.stationId} />
+              </div>
+            ) : null}
 
-          {!formOptions && !formOptionsLoading && (
-            <div className="flex items-center gap-2 text-sm text-amber-700">
-              <AlertCircle className="h-4 w-4" />
-              Form options unavailable — role/station lists may be incomplete.
-            </div>
-          )}
+            {selectedRoleOption?.requiresRegion ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Region</Label>
+                  <Select
+                    value={form.region ?? ''}
+                    onValueChange={(value) => setForm({ ...form, region: value, district: '' })}
+                    disabled={submitting || formOptionsLoading}
+                  >
+                    <SelectTrigger className={userFieldClass(Boolean(errors.region))}>
+                      <SelectValue placeholder="Select region" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {regionOptions.map((region) => (
+                        <SelectItem key={region} value={region}>
+                          {region}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <UserFieldError message={errors.region} />
+                </div>
+                <div className="space-y-2">
+                  <Label>District (optional)</Label>
+                  <Select
+                    value={form.district ?? ''}
+                    onValueChange={(value) => setForm({ ...form, district: value })}
+                    disabled={submitting || !form.region}
+                  >
+                    <SelectTrigger className={userFieldClass(false)}>
+                      <SelectValue placeholder="Select district" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {districtOptions.map((district) => (
+                        <SelectItem key={district} value={district}>
+                          {district}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            ) : null}
 
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={submitting}
-              className="bg-[#193cb8] hover:bg-[#142f9e] text-white"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                'Save Changes'
-              )}
-            </Button>
-          </div>
-        </div>
+            {formOptionsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading form options…
+              </div>
+            ) : null}
+
+            {!formOptions && !formOptionsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                Form options unavailable — lists may be incomplete.
+              </div>
+            ) : null}
+          </UserFormSection>
+        </DialogBody>
+
+        <DialogFooter className="px-6 py-4 border-t border-border/80 bg-muted/20 gap-2 sm:justify-end shrink-0">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={() => void handleSave()} disabled={submitting}>
+            {submitting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              'Save changes'
+            )}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

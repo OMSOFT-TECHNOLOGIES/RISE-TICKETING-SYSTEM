@@ -119,6 +119,23 @@ export function formatTripDepartureDisplay(trip: TripLike): string {
   return dt.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Local calendar date `YYYY-MM-DD` for trip list filters (wall clock, not UTC). */
+export function localCalendarDateKey(reference = new Date()): string {
+  const y = reference.getFullYear();
+  const m = String(reference.getMonth() + 1).padStart(2, '0');
+  const d = String(reference.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function tripCalendarDateKey(trip: TripLike): string {
+  const iso = getTripDepartureIso(trip);
+  if (iso.length >= 10) return iso.slice(0, 10);
+  if (typeof trip.departureDate === 'string' && trip.departureDate.trim()) {
+    return trip.departureDate.trim().slice(0, 10);
+  }
+  return '';
+}
+
 export function formatTicketDateTime(value: unknown): { date: string; time: string } {
   const parts = parseLocalWallClock(value);
   if (!parts) {

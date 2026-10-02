@@ -1,5 +1,10 @@
 import { formatApiError, passengerApi, parseListResponse, tripApi } from './api';
-import { policeReceiptFromTrip, printPoliceReceiptCheck } from './policeReceiptCheck';
+import {
+  issuePoliceCheckToken,
+  policeReceiptFromTrip,
+  printPoliceReceiptCheck,
+} from './policeReceiptCheck';
+import { getDefaultTripTiers, parseTripTiersFromApi } from './tripTier';
 
 export async function fetchTripManifest(tripId: string) {
   const manifestRes = await passengerApi.getTripPassengers(tripId);
@@ -30,6 +35,31 @@ export function canPrintPoliceCheck(trip: Record<string, unknown>): boolean {
   return status === 'journey_started' || status === 'on_road';
 }
 
+async function printPoliceManifest(
+  tripId: string,
+  trip: Record<string, unknown>,
+  stationName: string,
+  branchPhone?: string
+): Promise<boolean> {
+  const passengers = await fetchTripManifest(tripId);
+  if (passengers.length === 0) {
+    return false;
+  }
+  const policeCheck = await issuePoliceCheckToken(tripId);
+  if (!policeCheck) {
+    return false;
+  }
+  const tiersRes = await tripApi.getCommissionTiers();
+  const tiers =
+    tiersRes.success && tiersRes.data
+      ? parseTripTiersFromApi(tiersRes.data)
+      : getDefaultTripTiers();
+  printPoliceReceiptCheck(
+    policeReceiptFromTrip(trip, passengers, stationName, branchPhone, policeCheck, tiers)
+  );
+  return true;
+}
+
 export async function startTripJourneyAndPrint(params: {
   tripId: string;
   trip: Record<string, unknown>;
@@ -48,9 +78,15 @@ export async function startTripJourneyAndPrint(params: {
     ...params.trip,
     status: 'journey_started',
   }) as Record<string, unknown>;
-  printPoliceReceiptCheck(
-    policeReceiptFromTrip(updated, passengers, params.stationName, params.branchPhone)
+  const printed = await printPoliceManifest(
+    params.tripId,
+    updated,
+    params.stationName,
+    params.branchPhone
   );
+  if (!printed) {
+    return { ok: false, error: 'Journey started but police check could not be printed' };
+  }
   return { ok: true, updatedTrip: updated };
 }
 
@@ -64,8 +100,14 @@ export async function printPoliceCheckForTrip(params: {
   if (passengers.length === 0) {
     return { ok: false, error: 'No passengers on manifest' };
   }
-  printPoliceReceiptCheck(
-    policeReceiptFromTrip(params.trip, passengers, params.stationName, params.branchPhone)
+  const printed = await printPoliceManifest(
+    params.tripId,
+    params.trip,
+    params.stationName,
+    params.branchPhone
   );
+  if (!printed) {
+    return { ok: false, error: 'Could not generate police check QR codes' };
+  }
   return { ok: true };
 }

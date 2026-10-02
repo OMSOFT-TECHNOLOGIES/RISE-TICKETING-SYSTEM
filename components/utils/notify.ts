@@ -1,3 +1,7 @@
+/**
+ * Transient feedback (Sonner toasts). For inline banners use `RiseStatusAlert`;
+ * for loading UI use `RisePreloader`; for destructive confirms use `RiseConfirmDialog`.
+ */
 import { toast, type ExternalToast } from 'sonner';
 
 type NotifyOptions = ExternalToast;

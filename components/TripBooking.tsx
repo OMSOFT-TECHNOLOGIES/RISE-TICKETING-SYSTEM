@@ -8,29 +8,28 @@ import { usePageAction } from './context/PageActionContext';
 import { 
   Route, 
   Plus, 
-  MapPin, 
   Clock, 
   Users, 
   Bus,
-  Calendar,
   CheckCircle,
   AlertCircle,
-  AlertTriangle,
   Eye,
   Phone,
   DollarSign,
-  TrendingUp,
   Calculator,
   Info,
   UserPlus,
   CarFront,
   ExternalLink,
   Loader2,
-  Shield
+  Shield,
+  RefreshCw,
+  Search,
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -51,7 +50,12 @@ import {
   tripStatusRequiresReason,
 } from './constants/tripOperationStatus';
 import { formatTripDepartureDisplay, getTripDepartureIso } from './utils/tripDateTime';
-import { getTripSeatStats } from './utils/tripSeats';
+import {
+  getTripSeatStats,
+  mergeTripSeatUpdateFromApi,
+  patchTripWithBookedSeats,
+  sumPassengerSeatsFromManifest,
+} from './utils/tripSeats';
 import { notify } from './utils/notify';
 import {
   tripApi,
@@ -61,26 +65,48 @@ import {
   parseListResponse,
   formatApiError,
 } from './utils/api';
-import { isGlobalDataScope, listParamsForDataEntry } from './utils/stationScope';
+import {
+  deferListUntilStationPicked,
+  emptyPaginatedListPayload,
+  isGlobalDataScope,
+  listParamsForDataEntry,
+} from './utils/stationScope';
+import {
+  driverRecordId,
+  isDriverSchedulable,
+  isVehicleSchedulable,
+  loadDriversForTripScheduling,
+  loadVehiclesForTripScheduling,
+  vehicleRegistrationForTrip,
+} from './utils/tripSchedulingResources';
 import { useDataEntryStation } from './shared/hooks/useDataEntryStation';
 import { DataEntryStationBanner } from './shared/DataEntryStationBanner';
 import { toDriverApiPayload } from './utils/driverForm';
 import { DriverSearchSelect } from './shared/DriverSearchSelect';
+import { VehicleSearchSelect } from './shared/VehicleSearchSelect';
 import { useEntityList } from './shared/hooks/useEntityList';
 import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
 import { TablePagination } from './shared/TablePagination';
+import { ScrollableTable } from './shared/ScrollableTable';
+import { PageHeader } from './shared/PageHeader';
+import { DashboardStatCard } from './Dashboard/DashboardStatCard';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
 import {
   EMPTY_PASSENGER_BOOKING_FORM,
-  PassengerBookingFormFields,
   type PassengerBookingFormValues,
 } from './shared/PassengerBookingFormFields';
 import {
   completePassengerBookingSession,
   createQueueId,
   isPhoneBookedForTrip,
+  validateBiometricPassengerBooking,
   validatePassengerBookingForm,
   type QueuedPassengerBooking,
 } from './shared/bulkPassengerBooking';
+import {
+  PassengerBookingEntry,
+  type PassengerBookingMethod,
+} from './shared/PassengerBookingEntry';
 import { issueETicket } from './utils/eTicket';
 import type { BookPassengerInput } from './utils/eTicket.types';
 import { PassengerBookingQueuePanel } from './shared/PassengerBookingQueuePanel';
@@ -251,49 +277,83 @@ const TierInfoCard = ({ fare, tiers }: { fare: number; tiers: TripCommissionTier
   );
 };
 
+function vehicleRegistrationKey(vehicle: TripRecord): string {
+  return vehicleRegistrationForTrip(vehicle as Record<string, unknown>);
+}
+
 export function TripBooking() {
-  const { user, isSuperAdmin } = useAuth();
+  const { user, isSuperAdmin, hasPermission } = useAuth();
   const { pendingAction, clearAction } = usePageAction();
   const isGlobalUser = isGlobalDataScope(user?.role);
   const stationId = user?.stationId;
   const dataEntry = useDataEntryStation();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('');
 
   const fetchTrips = useCallback(
-    (page: number, limit: number) =>
-      tripApi.getAll(listParamsForDataEntry(user, dataEntry.effectiveStationId, { page, limit })),
-    [user, dataEntry.effectiveStationId]
+    (page: number, limit: number) => {
+      if (deferListUntilStationPicked(user, dataEntry.stationId)) {
+        return Promise.resolve({
+          success: true,
+          data: emptyPaginatedListPayload('trips', limit),
+        });
+      }
+      return tripApi.getAll(
+        listParamsForDataEntry(user, dataEntry.effectiveStationId, {
+          page,
+          limit,
+          search: searchTerm.trim() || undefined,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+          date: dateFilter || undefined,
+        })
+      );
+    },
+    [user, dataEntry.stationId, dataEntry.effectiveStationId, searchTerm, statusFilter, dateFilter]
   );
   const fetchDrivers = useCallback(async () => {
-    const params = listParamsForDataEntry(user, dataEntry.effectiveStationId);
-    const response = await driverApi.getAvailable(params?.stationId);
-    if (response.success && Array.isArray(response.data)) {
-      return { ...response, data: { drivers: response.data } };
-    }
-    return response;
-  }, [user, dataEntry.effectiveStationId]);
-  const fetchVehicles = useCallback(
-    () => vehicleApi.getAll(listParamsForDataEntry(user, dataEntry.effectiveStationId, { limit: 200 })),
+    return loadDriversForTripScheduling();
+  }, []);
+
+  /** All drivers at the station (or scope) — for trip history, not scheduling availability. */
+  const fetchHistoryDrivers = useCallback(
+    () =>
+      driverApi.getAll(
+        listParamsForDataEntry(user, dataEntry.effectiveStationId, { limit: 500, page: 1 })
+      ),
     [user, dataEntry.effectiveStationId]
   );
+  const fetchVehicles = useCallback(async () => {
+    return loadVehiclesForTripScheduling();
+  }, []);
 
   const {
     items: rawTrips,
     loading: tripsLoading,
+    error: tripsError,
     refresh: refreshTrips,
     isSubmitting,
     setIsSubmitting,
     page: tripsPage,
     setPage: setTripsPage,
     pagination: tripsPagination,
+    pageSize: tripsPageSize,
+    setPageSize: setTripsPageSize,
   } = usePaginatedEntityList<TripRecord>({
     fetchFn: fetchTrips,
     entityKey: 'trips',
     errorMessage: 'Failed to load trips',
+    resetPageDeps: [dataEntry.effectiveStationId, searchTerm, statusFilter, dateFilter],
   });
   const { items: drivers, loading: driversLoading, refresh: refreshDrivers } = useEntityList<TripRecord>({
     fetchFn: fetchDrivers,
     entityKey: 'drivers',
     errorMessage: 'Failed to load drivers',
+  });
+  const { items: historyDrivers, loading: historyDriversLoading } = useEntityList<TripRecord>({
+    fetchFn: fetchHistoryDrivers,
+    entityKey: 'drivers',
+    errorMessage: 'Failed to load drivers for history',
   });
   const { items: vehicles, loading: vehiclesLoading, refresh: refreshVehicles } = useEntityList<TripRecord>({
     fetchFn: fetchVehicles,
@@ -301,8 +361,22 @@ export function TripBooking() {
     errorMessage: 'Failed to load vehicles',
   });
 
-  const trips = useMemo(() => rawTrips.map(normalizeTrip), [rawTrips]);
-  const loading = tripsLoading || driversLoading || vehiclesLoading;
+  const [tripBookedSeatOverrides, setTripBookedSeatOverrides] = useState<Record<string, number>>(
+    {}
+  );
+
+  const trips = useMemo(() => {
+    return rawTrips.map((trip) => {
+      const normalized = normalizeTrip(trip);
+      const override = tripBookedSeatOverrides[String(normalized.id ?? '')];
+      if (override == null) return normalized;
+      return normalizeTrip(patchTripWithBookedSeats(normalized, override));
+    });
+  }, [rawTrips, tripBookedSeatOverrides]);
+
+  const pageDescription = isGlobalUser
+    ? 'Schedule trips, book passengers, and track commission tiers across stations.'
+    : `Trips for ${user?.stationName ?? 'your station'} — scheduling, bookings, and tier commission.`;
 
   const [showBookDialog, setShowBookDialog] = useState(false);
   const [showPassengerBookDialog, setShowPassengerBookDialog] = useState(false);
@@ -313,6 +387,13 @@ export function TripBooking() {
       clearAction();
     }
   }, [pendingAction, clearAction]);
+
+  useEffect(() => {
+    if (showBookDialog) {
+      void refreshDrivers();
+      void refreshVehicles();
+    }
+  }, [showBookDialog, refreshDrivers, refreshVehicles]);
 
   const [showTierGuide, setShowTierGuide] = useState(false);
   const [commissionTiers, setCommissionTiers] = useState<TripCommissionTier[]>(() =>
@@ -388,6 +469,8 @@ export function TripBooking() {
     tripId: '',
     ...EMPTY_PASSENGER_BOOKING_FORM,
   });
+  const [passengerBookingMethod, setPassengerBookingMethod] =
+    useState<PassengerBookingMethod>('manual');
 
   const patchPassengerBookingForm = (updates: Partial<PassengerBookingFormValues>) => {
     if (updates.phone !== undefined) {
@@ -409,6 +492,7 @@ export function TripBooking() {
     setBookingQueue([]);
     setPassengerProfileFound(false);
     setDuplicateTripBooking(false);
+    setPassengerBookingMethod('manual');
   };
 
   const openBookPassengerModal = (tripId: string | number) => {
@@ -519,13 +603,54 @@ export function TripBooking() {
     return () => window.clearTimeout(timer);
   }, [passengerBooking.phone, showPassengerBookDialog]);
 
-  const userTrips = isGlobalUser ? trips : trips.filter((t) => t.stationId === user?.stationId);
+  const userTrips = trips;
+  const seatStatsForTrip = useCallback(
+    (trip: TripRecord) =>
+      getTripSeatStats(trip, {
+        passengers:
+          String(trip.id) === String(passengerBooking.tripId)
+            ? bookingTripManifest
+            : undefined,
+      }),
+    [passengerBooking.tripId, bookingTripManifest]
+  );
+
   const activeBookingTrip = useMemo(
     () => userTrips.find((t) => String(t.id) === String(passengerBooking.tripId)),
     [userTrips, passengerBooking.tripId]
   );
-  const availableDrivers = drivers.filter((d) => d.status === 'active' || !d.status);
-  const availableVehicles = vehicles.filter((v) => v.status === 'active' || !v.status);
+  const availableDrivers = drivers.filter((d) =>
+    isDriverSchedulable(d as Record<string, unknown>)
+  );
+
+  const driversForTripHistory = useMemo(() => {
+    const source = historyDrivers.length > 0 ? historyDrivers : drivers;
+    return source.filter((d) => {
+      const status = String(d.status ?? 'active');
+      return status !== 'suspended';
+    });
+  }, [historyDrivers, drivers]);
+
+  const driverOptionId = (d: TripRecord) => String(d.id ?? d.driverId ?? '');
+  const driverOptionLabel = (d: TripRecord) =>
+    String(d.name ?? d.fullName ?? (driverOptionId(d) || 'Driver'));
+  const availableVehicles = vehicles.filter((v) =>
+    isVehicleSchedulable(v as Record<string, unknown>)
+  );
+
+  const vehiclesForScheduling = useMemo(() => {
+    const merged = new Map<string, TripRecord>();
+    for (const v of availableVehicles) {
+      if (!isVehicleSchedulable(v as Record<string, unknown>)) continue;
+      const key = vehicleRegistrationKey(v);
+      if (!key) continue;
+      merged.set(key, v);
+    }
+    return Array.from(merged.values());
+  }, [availableVehicles]);
+
+  const canManageVehicles = hasPermission('manage_vehicles');
+  const canManageDrivers = hasPermission('manage_drivers');
 
   const openPassengersDialog = async (trip: TripRecord) => {
     setSelectedTrip(trip);
@@ -567,14 +692,23 @@ export function TripBooking() {
     };
   });
 
+  const awaitingStationPick =
+    dataEntry.needsPicker && deferListUntilStationPicked(user, dataEntry.stationId);
+
+  const totalTrips = tripsPagination?.totalItems ?? userTrips.length;
+  const scheduledCount = userTrips.filter((t) => t.status === 'scheduled').length;
+  const totalPassengersBooked = userTrips.reduce((sum, trip) => sum + Number(trip.booked ?? 0), 0);
+  const totalCommissionPage = tierStats.reduce((sum, tier) => sum + tier.totalCommission, 0);
+  const totalNetRevenuePage = tierStats.reduce((sum, tier) => sum + tier.netRevenue, 0);
+
   const handleScheduleTrip = async () => {
     if (!newTrip.routeFrom || !newTrip.routeTo || !newTrip.departureDate || !newTrip.departureTime || !newTrip.fare) {
       notify.error('Please fill in all required trip fields');
       return;
     }
 
-    const selectedVehicle = vehicles.find(
-      (v) => String(v.registrationNumber) === newTrip.vehicle
+    const selectedVehicle = vehiclesForScheduling.find(
+      (v) => vehicleRegistrationKey(v) === newTrip.vehicle
     );
     const driverId =
       newTrip.driverId ||
@@ -745,6 +879,9 @@ export function TripBooking() {
       emergencyContactName: entry.emergencyContactName,
       emergencyContactPhone: entry.emergencyContactPhone,
       emergencyContactRelationship: entry.emergencyContactRelationship,
+      ...(entry.biometricReference?.trim()
+        ? { biometricReference: entry.biometricReference.trim() }
+        : {}),
     };
   };
 
@@ -754,10 +891,14 @@ export function TripBooking() {
         passengerBooking.emergencyContactPhone?.trim() &&
         passengerBooking.emergencyContactRelationship?.trim()
     );
-    const validationError = validatePassengerBookingForm(passengerBooking, {
+    const validationOpts = {
       returningPassenger: passengerProfileFound,
       hasStoredEmergency,
-    });
+    };
+    const validationError =
+      passengerBookingMethod === 'biometric'
+        ? validateBiometricPassengerBooking(passengerBooking, validationOpts)
+        : validatePassengerBookingForm(passengerBooking, validationOpts);
     if (validationError) {
       notify.error(validationError);
       return;
@@ -779,9 +920,15 @@ export function TripBooking() {
       notify.error('Please select a valid trip');
       return;
     }
-    if (!getTripSeatStats(trip).canBook) {
+    const seatStats = seatStatsForTrip(trip);
+    if (!seatStats.canBook) {
       notify.error('This trip is full — no seats remaining');
       await refreshTrips();
+      return;
+    }
+    const seatsRequested = Math.max(1, Number(passengerBooking.seats ?? 1));
+    if (seatsRequested > seatStats.remaining) {
+      notify.error(`Only ${seatStats.remaining} seat${seatStats.remaining === 1 ? '' : 's'} left on this trip`);
       return;
     }
 
@@ -791,10 +938,13 @@ export function TripBooking() {
 
     setBulkSubmitting(true);
     try {
-      const ticket = await issueETicket(buildPassengerBookInput(passengerBooking, trip), {
-        printTicket: true,
-        sendSms: false,
-      });
+      const { ticket, seatsBooked, updatedTrip } = await issueETicket(
+        buildPassengerBookInput(passengerBooking, trip),
+        {
+          printTicket: true,
+          sendSms: false,
+        }
+      );
 
       setBookingQueue((prev) => [
         ...prev,
@@ -807,8 +957,14 @@ export function TripBooking() {
       if (manifestRes.success && manifestRes.data !== undefined) {
         const manifest = parseListResponse<TripRecord>(manifestRes.data, 'passengers');
         setBookingTripManifest(manifest);
+        const tripId = String(trip.id);
+        const manifestSeats = sumPassengerSeatsFromManifest(manifest);
+        const mergedTrip = mergeTripSeatUpdateFromApi(trip, updatedTrip, seatsBooked);
+        const bookedSeats =
+          manifestSeats > 0 ? manifestSeats : getTripSeatStats(mergedTrip).booked;
+        setTripBookedSeatOverrides((prev) => ({ ...prev, [tripId]: bookedSeats }));
         const cap = Number(trip.capacity ?? 0);
-        if (cap > 0 && manifest.length >= cap) {
+        if (cap > 0 && bookedSeats >= cap) {
           notify.success('Trip is now fully booked', {
             description: 'Status updated to Fully booked.',
           });
@@ -862,8 +1018,8 @@ export function TripBooking() {
     );
   }, [showBookDialog, stationScopedStaff, user?.stationName]);
 
-  const scheduleVehicle = vehicles.find(
-    (v) => String(v.registrationNumber) === newTrip.vehicle
+  const scheduleVehicle = vehiclesForScheduling.find(
+    (v) => vehicleRegistrationKey(v) === newTrip.vehicle
   );
   const scheduleCapacity = Number(scheduleVehicle?.capacity ?? 0);
   const scheduleFare = parseFloat(newTrip.fare) || 0;
@@ -982,8 +1138,8 @@ export function TripBooking() {
     const tierInfo = calculateTierInfo(commissionTiers, trip.fare, trip.booked);
     
     return (
-      <Card>
-        <CardHeader>
+      <Card className="rounded-xl ring-1 ring-border/50 shadow-sm">
+        <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center space-x-2">
@@ -1081,17 +1237,17 @@ export function TripBooking() {
     );
   };
 
-  if (loading) {
+  if (tripsLoading && trips.length === 0 && !tripsError && !awaitingStationPick) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] p-6">
-        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8] mb-4" />
-        <p className="text-muted-foreground">Loading trips...</p>
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading trips…" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="min-h-full rise-dashboard-page">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       {dataEntry.needsPicker && (
         <DataEntryStationBanner
           stationId={dataEntry.stationId}
@@ -1100,6 +1256,7 @@ export function TripBooking() {
           loading={dataEntry.loading}
           loadError={dataEntry.loadError}
           onRetry={() => void dataEntry.reloadStations()}
+          description={dataEntry.pickerDescription}
         />
       )}
 
@@ -1114,24 +1271,52 @@ export function TripBooking() {
         </Alert>
       )}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Trip Booking & Management</h1>
-          <p className="text-gray-600">
-            {isGlobalUser
-              ? 'Manage all trips across RISE stations with tier-based commission system'
-              : `Manage trips for ${user?.stationName ?? 'your station'}`}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Dialog open={showTierGuide} onOpenChange={setShowTierGuide}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Info className="h-4 w-4 mr-2" />
-                Tier Guide
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+      <PageHeader
+        title="Trip registration"
+        description={pageDescription}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refreshTrips({ toastOnError: true })}
+              disabled={tripsLoading || awaitingStationPick}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${tripsLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowTierGuide(true)}>
+              <Info className="h-4 w-4 mr-2" />
+              Tier guide
+            </Button>
+            <Button
+              className="shadow-sm"
+              disabled={awaitingStationPick}
+              onClick={() => setShowBookDialog(true)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Schedule trip
+            </Button>
+          </>
+        }
+      />
+
+      {tripsError ? (
+        <RiseStatusAlert type="error" title="Could not load trips">
+          {tripsError}
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => void refreshTrips({ toastOnError: true })}
+          >
+            Try again
+          </Button>
+        </RiseStatusAlert>
+      ) : null}
+
+      <Dialog open={showTierGuide} onOpenChange={setShowTierGuide}>
+            <DialogContent className="max-w-2xl rounded-2xl">
               <DialogHeader>
                 <DialogTitle>Commission Tier System</DialogTitle>
                 <DialogDescription>
@@ -1269,23 +1454,27 @@ export function TripBooking() {
                 </DialogFooter>
               )}
             </DialogContent>
-          </Dialog>
+      </Dialog>
 
-          <Dialog open={showBookDialog} onOpenChange={setShowBookDialog}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Schedule Trip
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Schedule New Trip</DialogTitle>
-                <DialogDescription>
-                  Create a new trip schedule for passengers to book.
-                </DialogDescription>
+      <Dialog open={showBookDialog} onOpenChange={setShowBookDialog}>
+            <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden rounded-2xl sm:max-w-2xl">
+              <DialogHeader className="border-b border-border/80 bg-gradient-to-br from-muted/50 to-background px-6 py-5">
+                <div className="flex items-start gap-4 pr-6">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/20">
+                    <Route className="h-5 w-5" strokeWidth={2.25} />
+                  </span>
+                  <div className="space-y-1 min-w-0">
+                    <DialogTitle className="text-xl font-semibold tracking-tight">
+                      Schedule trip
+                    </DialogTitle>
+                    <DialogDescription className="text-sm leading-relaxed">
+                      Set route, departure, vehicle, driver, and fare. Passengers can book once the
+                      trip is on the schedule.
+                    </DialogDescription>
+                  </div>
+                </div>
               </DialogHeader>
-              <div className="space-y-4">
+              <DialogBody className="px-6 py-5 space-y-4 max-h-[min(58vh,520px)]">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="from">From</Label>
@@ -1338,6 +1527,7 @@ export function TripBooking() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <Label htmlFor="vehicle">Vehicle</Label>
+                    {canManageVehicles ? (
                     <Dialog open={showVehicleRegDialog} onOpenChange={setShowVehicleRegDialog}>
                       <DialogTrigger asChild>
                         <Button variant="outline" size="sm">
@@ -1432,12 +1622,32 @@ export function TripBooking() {
                         </div>
                       </DialogContent>
                     </Dialog>
+                    ) : null}
                   </div>
-                  <Select
-                    value={newTrip.vehicle || undefined}
+                  <VehicleSearchSelect
+                    hideLabel
+                    vehicles={vehiclesForScheduling.map((vehicle) => {
+                      const reg = vehicleRegistrationKey(vehicle);
+                      return {
+                        id: String(vehicle.id ?? reg),
+                        registration: reg,
+                        capacity:
+                          vehicle.capacity != null ? Number(vehicle.capacity) : undefined,
+                        make: vehicle.make != null ? String(vehicle.make) : undefined,
+                        model: vehicle.model != null ? String(vehicle.model) : undefined,
+                        driverName: driverNameForVehicle(vehicle, drivers) || undefined,
+                      };
+                    })}
+                    value={newTrip.vehicle}
+                    loading={vehiclesLoading}
+                    emptyMessage={
+                      canManageVehicles
+                        ? 'No vehicles available — register one above or add fleet under Vehicles'
+                        : 'No vehicles found — contact operations to register fleet'
+                    }
                     onValueChange={(value) => {
-                      const vehicle = availableVehicles.find(
-                        (v) => String(v.registrationNumber) === value
+                      const vehicle = vehiclesForScheduling.find(
+                        (v) => vehicleRegistrationKey(v) === value
                       );
                       const assignedDriver = driverNameForVehicle(vehicle, drivers);
                       const driverMatch = drivers.find(
@@ -1450,30 +1660,14 @@ export function TripBooking() {
                         driverId: driverMatch ? String(driverMatch.id) : '',
                       });
                     }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select vehicle" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableVehicles.length === 0 ? (
-                        <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                          No vehicles available — register one above
-                        </div>
-                      ) : (
-                        availableVehicles.map((vehicle) => (
-                          <SelectItem key={vehicle.id} value={vehicle.registrationNumber}>
-                            {vehicle.registrationNumber} ({vehicle.capacity} seats)
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
+                  />
                 </div>
                 
                 {/* Enhanced Driver Selection */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <Label htmlFor="driver">Driver</Label>
+                    {canManageDrivers ? (
                     <Dialog open={showDriverRegDialog} onOpenChange={setShowDriverRegDialog}>
                       <DialogTrigger asChild>
                         <Button variant="outline" size="sm">
@@ -1563,19 +1757,30 @@ export function TripBooking() {
                         </div>
                       </DialogContent>
                     </Dialog>
+                    ) : null}
                   </div>
                   <DriverSearchSelect
-                    drivers={availableDrivers.map((d) => ({
-                      id: String(d.id),
-                      name: String(d.name ?? ''),
-                      licenseNumber: d.licenseNumber != null ? String(d.licenseNumber) : undefined,
-                      phone: d.phone != null ? String(d.phone) : undefined,
-                      photoUrl: d.photoUrl != null ? String(d.photoUrl) : undefined,
-                    }))}
+                    hideLabel
+                    drivers={availableDrivers
+                      .map((d) => {
+                        const id = driverRecordId(d as Record<string, unknown>);
+                        if (!id) return null;
+                        return {
+                          id,
+                          name: driverOptionLabel(d),
+                          licenseNumber:
+                            d.licenseNumber != null ? String(d.licenseNumber) : undefined,
+                          phone: d.phone != null ? String(d.phone) : undefined,
+                          photoUrl: d.photoUrl != null ? String(d.photoUrl) : undefined,
+                        };
+                      })
+                      .filter((d): d is NonNullable<typeof d> => d != null)}
                     value={newTrip.driverId}
+                    emptyMessage="No drivers match — register a driver or check availability"
                     onValueChange={(driverId) => {
                       const driver = availableDrivers.find(
-                        (d) => String(d.id) === String(driverId)
+                        (d) =>
+                          driverRecordId(d as Record<string, unknown>) === String(driverId)
                       );
                       setNewTrip({
                         ...newTrip,
@@ -1617,115 +1822,136 @@ export function TripBooking() {
                   </Alert>
                 )}
 
-                <Button onClick={handleScheduleTrip} className="w-full" disabled={isSubmitting}>
+              </DialogBody>
+              <DialogFooter className="gap-2 sm:gap-2 bg-muted/20">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowBookDialog(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void handleScheduleTrip()}
+                  disabled={isSubmitting}
+                  className="min-w-[140px]"
+                >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Scheduling...
+                      Scheduling…
                     </>
                   ) : (
-                    'Schedule Trip'
+                    <>
+                      <Route className="h-4 w-4 mr-2" />
+                      Schedule trip
+                    </>
                   )}
                 </Button>
-              </div>
+              </DialogFooter>
             </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+      </Dialog>
 
-      {/* Enhanced Trip Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Route className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
-            <p className="text-2xl font-bold">{userTrips.length}</p>
-            <p className="text-sm text-gray-600">Total Trips</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-600" />
-            <p className="text-2xl font-bold">{userTrips.filter(t => t.status === 'scheduled').length}</p>
-            <p className="text-sm text-gray-600">Scheduled</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Users className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
-            <p className="text-2xl font-bold">{userTrips.reduce((sum, trip) => sum + trip.booked, 0)}</p>
-            <p className="text-sm text-gray-600">Total Passengers</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <DollarSign className="h-8 w-8 mx-auto mb-2 text-green-600" />
-            <p className="text-2xl font-bold">
-              ₵{tierStats.reduce((sum, tier) => sum + tier.totalCommission, 0).toFixed(2)}
+      {!awaitingStationPick ? (
+        <section className="rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm p-4 sm:p-5 ring-1 ring-border/40">
+          <h2 className="text-sm font-semibold tracking-tight mb-4">Overview</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+            <DashboardStatCard
+              title="Trips"
+              value={totalTrips}
+              icon={Route}
+              accent="blue"
+              hint="Total in registry"
+            />
+            <DashboardStatCard
+              title="Scheduled"
+              value={scheduledCount}
+              icon={CheckCircle}
+              accent="emerald"
+              hint="On this page"
+            />
+            <DashboardStatCard
+              title="Passengers"
+              value={totalPassengersBooked}
+              icon={Users}
+              accent="amber"
+              hint="Seats booked (page)"
+            />
+            <DashboardStatCard
+              title="Commission"
+              value={`₵${totalCommissionPage.toFixed(2)}`}
+              icon={DollarSign}
+              accent="violet"
+              hint={`Net ₵${totalNetRevenuePage.toFixed(2)} on page`}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {!awaitingStationPick &&
+      (availableDrivers.length === 0 || vehiclesForScheduling.length === 0) ? (
+        <RiseStatusAlert type="warning" title="Fleet required before scheduling">
+          {availableDrivers.length === 0 && vehiclesForScheduling.length === 0
+            ? canManageVehicles || canManageDrivers
+              ? 'Register drivers and vehicles before scheduling trips.'
+              : 'No drivers or vehicles are assigned to your station yet — contact your station manager.'
+            : availableDrivers.length === 0
+              ? canManageDrivers
+                ? 'Register drivers before scheduling trips.'
+                : 'No drivers available — contact your station manager.'
+              : canManageVehicles
+                ? 'Add vehicles to your station fleet before scheduling trips.'
+                : 'No vehicles at your station — contact your station manager.'}
+        </RiseStatusAlert>
+      ) : null}
+
+      {!awaitingStationPick ? (
+        <section className="rounded-2xl border border-border/60 bg-card/30 p-4 sm:p-5 ring-1 ring-border/40 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold tracking-tight">Commission by tier</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Revenue and RISE commission for trips on this page, grouped by fare tier.
             </p>
-            <p className="text-sm text-gray-600">Total Commission</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <TrendingUp className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
-            <p className="text-2xl font-bold">
-              ₵{tierStats.reduce((sum, tier) => sum + tier.netRevenue, 0).toFixed(2)}
-            </p>
-            <p className="text-sm text-gray-600">Net Revenue</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Registration Status Alert */}
-      {(availableDrivers.length === 0 || availableVehicles.length === 0) && (
-        <Alert>
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            <strong>Registration Required:</strong> 
-            {availableDrivers.length === 0 && availableVehicles.length === 0 
-              ? " You need to register drivers and vehicles before scheduling trips."
-              : availableDrivers.length === 0 
-              ? " You need to register drivers before scheduling trips."
-              : " You need to register vehicles before scheduling trips."
-            }
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Tier Performance Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {tierStats.map((tierStat) => (
-          <Card key={tierStat.id}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <Badge variant="outline" className={tierStat.color}>
-                  {tierStat.name}
-                </Badge>
-                <span className="text-sm text-muted-foreground">
-                  {tierStat.tripCount} trips
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Trip Revenue</p>
-                  <p className="font-medium">₵{tierStat.totalRevenue.toFixed(2)}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Commission</p>
-                  <p className="font-medium text-[#193cb8]">₵{tierStat.totalCommission.toFixed(2)}</p>
-                </div>
-              </div>
-              <div className="pt-2 border-t">
-                <p className="text-muted-foreground text-sm">Net Revenue</p>
-                <p className="font-medium text-green-600">₵{tierStat.netRevenue.toFixed(2)}</p>
-              </div>
-              <p className="text-xs text-muted-foreground">{tierStat.description}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {tierStats.map((tierStat) => (
+              <Card key={tierStat.id} className="rounded-xl shadow-sm ring-1 ring-border/50">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <Badge variant="outline" className={tierStat.color}>
+                      {tierStat.name}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{tierStat.tripCount} trips</span>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-muted-foreground text-xs">Trip revenue</p>
+                      <p className="font-medium tabular-nums">₵{tierStat.totalRevenue.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">Commission</p>
+                      <p className="font-medium text-primary tabular-nums">
+                        ₵{tierStat.totalCommission.toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t">
+                    <p className="text-muted-foreground text-xs">Net revenue</p>
+                    <p className="font-medium text-green-600 tabular-nums">
+                      ₵{tierStat.netRevenue.toFixed(2)}
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{tierStat.description}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <Dialog
         open={showPassengerBookDialog}
@@ -1751,11 +1977,18 @@ export function TripBooking() {
               )}
             </DialogDescription>
           </DialogHeader>
-          <PassengerBookingFormFields
+          <PassengerBookingEntry
+            method={passengerBookingMethod}
+            onMethodChange={setPassengerBookingMethod}
             idPrefix="trip-book"
             values={passengerBooking}
             onChange={patchPassengerBookingForm}
             showSeatCount
+            maxSeats={
+              activeBookingTrip
+                ? seatStatsForTrip(activeBookingTrip).remaining
+                : 99
+            }
             showNotes
             phoneLookup={passengerPhoneLookup}
             profileFound={passengerProfileFound}
@@ -1797,16 +2030,85 @@ export function TripBooking() {
         </DialogContent>
       </Dialog>
 
-      {/* Enhanced Trips Table for larger screens */}
-      <div className="hidden lg:block">
-        <Card>
-          <CardHeader>
-            <CardTitle>Trip Schedule</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 overflow-hidden">
+        <CardHeader className="space-y-4 border-b border-border/60 bg-muted/20 pb-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <CardTitle className="text-lg font-semibold">Trip schedule</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                {awaitingStationPick
+                  ? 'Select a station above to load trips'
+                  : `${totalTrips} trip${totalTrips === 1 ? '' : 's'} · search and filter`}
+              </p>
+            </div>
+            {!awaitingStationPick ? (
+              <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto lg:min-w-[520px]">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Route, trip ID, vehicle…"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 h-10 bg-background/80"
+                  />
+                </div>
+                <Input
+                  type="date"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="h-10 w-full sm:w-[150px] bg-background/80"
+                  aria-label="Departure date"
+                />
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="h-10 w-full sm:w-[160px] bg-background/80">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All status</SelectItem>
+                    {TRIP_OPERATION_STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+          </div>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className={tripsLoading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
+            {awaitingStationPick ? (
+              <div className="py-16 text-center text-sm text-muted-foreground">
+                Pick a station to view and schedule trips for that terminal.
+              </div>
+            ) : userTrips.length === 0 ? (
+              <div className="py-16 text-center">
+                <Route className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                <p className="text-sm font-medium">No trips found</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                  {searchTerm.trim() || statusFilter !== 'all' || dateFilter
+                    ? 'Adjust filters or clear search.'
+                    : 'Schedule a trip to open bookings for passengers.'}
+                </p>
+                {!searchTerm.trim() && statusFilter === 'all' && !dateFilter ? (
+                  <Button className="mt-4" onClick={() => setShowBookDialog(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Schedule trip
+                  </Button>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                <div className="hidden lg:block">
+                  <ScrollableTable
+                    className="border-0 shadow-none ring-0"
+                    maxHeightClass="max-h-[min(70vh,560px)]"
+                    minWidthClass="min-w-[1200px]"
+                  >
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableHead>Route</TableHead>
                   <TableHead>Departure</TableHead>
                   <TableHead>Vehicle</TableHead>
@@ -1958,23 +2260,30 @@ export function TripBooking() {
                 })}
               </TableBody>
             </Table>
+                  </ScrollableTable>
+                </div>
+                <div className="lg:hidden grid grid-cols-1 gap-3">
+                  {userTrips.map((trip) => (
+                    <TripCard key={String(trip.id)} trip={trip} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          {!awaitingStationPick ? (
             <TablePagination
               page={tripsPage}
               pagination={tripsPagination}
               onPageChange={setTripsPage}
               loading={tripsLoading}
               itemLabel="trips"
+              pageSize={tripsPageSize}
+              onPageSizeChange={setTripsPageSize}
+              alwaysShow
             />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Trip Cards for mobile */}
-      <div className="lg:hidden grid grid-cols-1 gap-4">
-        {userTrips.map((trip) => (
-          <TripCard key={trip.id} trip={trip} />
-        ))}
-      </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       {/* Passengers Dialog */}
       <Dialog open={showPassengersDialog} onOpenChange={setShowPassengersDialog}>
@@ -2062,9 +2371,9 @@ export function TripBooking() {
         </DialogContent>
       </Dialog>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Driver trip history</CardTitle>
+      <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 overflow-hidden">
+        <CardHeader className="border-b border-border/60 bg-muted/20">
+          <CardTitle className="text-lg font-semibold">Driver trip history</CardTitle>
           <p className="text-sm text-muted-foreground">
             Search trips by driver to see success or failure and reasons
           </p>
@@ -2072,19 +2381,29 @@ export function TripBooking() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="space-y-2">
-              <Label>Driver</Label>
-              <Select value={driverHistoryDriverId} onValueChange={setDriverHistoryDriverId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select driver" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableDrivers.map((d) => (
-                    <SelectItem key={String(d.id)} value={String(d.id)}>
-                      {String(d.name ?? d.id)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <DriverSearchSelect
+                label="Driver"
+                value={driverHistoryDriverId}
+                disabled={historyDriversLoading}
+                placeholder={
+                  historyDriversLoading ? 'Loading drivers…' : 'Search driver by name or ID…'
+                }
+                emptyMessage="No drivers found for your station. Register drivers under Fleet → Drivers."
+                drivers={driversForTripHistory
+                  .map((d) => {
+                    const id = driverOptionId(d);
+                    if (!id) return null;
+                    return {
+                      id,
+                      name: driverOptionLabel(d),
+                      licenseNumber:
+                        d.licenseNumber != null ? String(d.licenseNumber) : undefined,
+                      phone: d.phone != null ? String(d.phone) : undefined,
+                    };
+                  })
+                  .filter((d): d is NonNullable<typeof d> => d != null)}
+                onValueChange={setDriverHistoryDriverId}
+              />
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label>Search route / trip ID</Label>
@@ -2139,6 +2458,7 @@ export function TripBooking() {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

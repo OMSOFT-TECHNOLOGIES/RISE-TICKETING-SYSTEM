@@ -1,12 +1,29 @@
 import React, { useState } from 'react';
-import { Check, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle, ChevronLeft, ChevronRight, ChevronsUpDown } from 'lucide-react';
 import { Button } from '../../ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../ui/dialog';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../ui/dialog';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Textarea } from '../../ui/textarea';
 import { Switch } from '../../ui/switch';
+import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../../ui/command';
 import { MapLocationPicker } from '../../MapLocationPicker';
 import { GHANA_REGIONS } from '../../constants/ghanaRegions';
 import { cn } from '../../ui/utils';
@@ -62,6 +79,7 @@ export function NewIncidentDialog({
   isSubmitting = false,
 }: NewIncidentDialogProps) {
   const [step, setStep] = useState(1);
+  const [openVehicleCombobox, setOpenVehicleCombobox] = useState(false);
   const isEdit = mode === 'edit';
 
   const handleOpenChange = (next: boolean) => {
@@ -69,7 +87,14 @@ export function NewIncidentDialog({
     onOpenChange(next);
   };
 
-  const canProceedStep1 = form.title && form.description && form.type && form.severity && form.region;
+  const reporterPhoneDigits = form.contactNumber.replace(/\D/g, '');
+  const canProceedStep1 =
+    form.title &&
+    form.description &&
+    form.type &&
+    form.severity &&
+    form.region &&
+    reporterPhoneDigits.length >= 9;
   const canProceedStep2 = !!selectedLocation;
 
   const handleFleetVehicleSelect = (vehicleId: string) => {
@@ -79,18 +104,30 @@ export function NewIncidentDialog({
       vehicleRegNumber: vehicle?.registrationNumber ?? '',
       driverName: vehicle?.driverName ?? '',
     });
+    setOpenVehicleCombobox(false);
   };
+
+  const selectedFleetVehicle = fleetVehicles.find((v) => v.id === form.registeredVehicleId);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex max-w-3xl flex-col gap-0 p-0 max-h-[min(90dvh,calc(100%-2rem))] overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle>{isEdit ? 'Edit incident' : 'Report New Incident'}</DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? `Update case details${incidentLabel ? ` for ${incidentLabel}` : ''}. Status and verification are managed separately in the case panel.`
-              : 'Complete all steps to file an incident report for emergency coordination'}
-          </DialogDescription>
+      <DialogContent className="flex max-w-3xl flex-col gap-0 p-0 max-h-[min(90dvh,calc(100%-2rem))] overflow-hidden rounded-2xl">
+        <DialogHeader className="border-b border-border/80 bg-gradient-to-br from-muted/50 to-background px-6 py-5 shrink-0">
+          <div className="flex items-start gap-4 pr-6">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/20">
+              <AlertTriangle className="h-5 w-5" strokeWidth={2.25} />
+            </span>
+            <div className="space-y-1 min-w-0">
+              <DialogTitle className="text-xl font-semibold tracking-tight">
+                {isEdit ? 'Edit incident' : 'Report incident'}
+              </DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed">
+                {isEdit
+                  ? `Update case details${incidentLabel ? ` for ${incidentLabel}` : ''}. Status and verification are managed in the case panel.`
+                  : 'Complete each step to file a report for emergency coordination and follow-up.'}
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
         <div className="px-6 py-4 border-b bg-muted/20 shrink-0">
@@ -101,29 +138,29 @@ export function NewIncidentDialog({
                   <div
                     className={cn(
                       'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-medium border-2 transition-colors',
-                      step > s.id && 'bg-[#193cb8] border-[#193cb8] text-white',
-                      step === s.id && 'border-[#193cb8] text-[#193cb8] bg-[#193cb8]/5',
+                      step > s.id && 'bg-primary border-primary text-primary-foreground',
+                      step === s.id && 'border-primary text-primary bg-primary/5',
                       step < s.id && 'border-muted-foreground/30 text-muted-foreground'
                     )}
                   >
                     {step > s.id ? <Check className="h-3.5 w-3.5" /> : s.id}
                   </div>
                   <div className="hidden md:block min-w-0">
-                    <p className={cn('text-xs font-medium truncate', step === s.id && 'text-[#193cb8]')}>
+                    <p className={cn('text-xs font-medium truncate', step === s.id && 'text-primary')}>
                       {s.title}
                     </p>
                     <p className="text-[10px] text-muted-foreground truncate">{s.description}</p>
                   </div>
                 </div>
                 {idx < STEPS.length - 1 && (
-                  <div className={cn('flex-1 h-px mx-2', step > s.id ? 'bg-[#193cb8]' : 'bg-border')} />
+                  <div className={cn('flex-1 h-px mx-2', step > s.id ? 'bg-primary' : 'bg-border')} />
                 )}
               </React.Fragment>
             ))}
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
+        <DialogBody className="min-h-0 flex-1 px-6 py-5 max-h-[min(52vh,480px)]">
           {step === 1 && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -180,6 +217,21 @@ export function NewIncidentDialog({
                   onChange={(e) => onFormChange({ description: e.target.value })}
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="reporter-telephone">Reporter telephone *</Label>
+                <Input
+                  id="reporter-telephone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="e.g. 024 123 4567"
+                  value={form.contactNumber}
+                  onChange={(e) => onFormChange({ contactNumber: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Phone number of the person reporting this incident (for follow-up and verification).
+                </p>
+              </div>
               {isEdit ? (
                 form.reportSource === 'public' ? (
                   <p className="text-xs text-muted-foreground rounded-lg border bg-muted/20 p-3">
@@ -191,7 +243,8 @@ export function NewIncidentDialog({
                   <div>
                     <Label>Citizen / public report</Label>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Requires verification by MTTD, Fire, Road Safety, or Police before investigation.
+                      Requires verification by MTTD, Fire, Road Safety, Police, or Ambulance before
+                      investigator confirmation.
                     </p>
                   </div>
                   <Switch
@@ -265,22 +318,62 @@ export function NewIncidentDialog({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2 md:col-span-2">
                     <Label>Registered vehicle *</Label>
-                    <Select
-                      value={form.registeredVehicleId || undefined}
-                      onValueChange={handleFleetVehicleSelect}
-                    >
-                      <SelectTrigger><SelectValue placeholder="Select from RISE fleet" /></SelectTrigger>
-                      <SelectContent>
-                        {fleetVehicles.map((v) => (
-                          <SelectItem key={v.id} value={v.id}>
-                            {v.registrationNumber}
-                            {v.driverName ? ` — ${v.driverName}` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover modal open={openVehicleCombobox} onOpenChange={setOpenVehicleCombobox}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openVehicleCombobox}
+                          className="w-full justify-between font-normal"
+                        >
+                          {selectedFleetVehicle ? (
+                            <span className="truncate">
+                              {selectedFleetVehicle.registrationNumber}
+                              {selectedFleetVehicle.driverName
+                                ? ` — ${selectedFleetVehicle.driverName}`
+                                : ''}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">Search registration or driver…</span>
+                          )}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Search RISE fleet vehicles…" />
+                          <CommandList>
+                            <CommandEmpty>No registered vehicle found.</CommandEmpty>
+                            <CommandGroup>
+                              {fleetVehicles.map((v) => (
+                                <CommandItem
+                                  key={v.id}
+                                  value={`${v.registrationNumber} ${v.driverName ?? ''} ${v.id}`}
+                                  onSelect={() => handleFleetVehicleSelect(v.id)}
+                                >
+                                  <Check
+                                    className={cn(
+                                      'mr-2 h-4 w-4 shrink-0',
+                                      form.registeredVehicleId === v.id ? 'opacity-100' : 'opacity-0'
+                                    )}
+                                  />
+                                  <span className="font-medium">{v.registrationNumber}</span>
+                                  {v.driverName ? (
+                                    <span className="text-muted-foreground truncate">
+                                      {' '}
+                                      — {v.driverName}
+                                    </span>
+                                  ) : null}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                     <p className="text-xs text-muted-foreground">
-                      Linked to insurance claims — driver name fills automatically when available.
+                      Search the national RISE vehicle register — driver name fills automatically when available.
                     </p>
                   </div>
                   <div className="space-y-2">
@@ -325,22 +418,14 @@ export function NewIncidentDialog({
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Contact Number</Label>
-                  <Input
-                    value={form.contactNumber}
-                    onChange={(e) => onFormChange({ contactNumber: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Contact Email</Label>
-                  <Input
-                    type="email"
-                    value={form.contactEmail}
-                    onChange={(e) => onFormChange({ contactEmail: e.target.value })}
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label>Reporter email (optional)</Label>
+                <Input
+                  type="email"
+                  value={form.contactEmail}
+                  onChange={(e) => onFormChange({ contactEmail: e.target.value })}
+                  placeholder="Optional email for updates"
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -379,9 +464,9 @@ export function NewIncidentDialog({
               </p>
             </div>
           )}
-        </div>
+        </DialogBody>
 
-        <div className="flex items-center justify-between px-6 py-4 border-t bg-muted/10 shrink-0">
+        <DialogFooter className="flex-row items-center justify-between gap-2 sm:justify-between bg-muted/20 shrink-0">
           <Button variant="ghost" onClick={step === 1 ? onCancel : () => setStep((s) => s - 1)}>
             {step === 1 ? (
               'Cancel'
@@ -393,22 +478,17 @@ export function NewIncidentDialog({
           </Button>
           {step < 4 ? (
             <Button
-              className="bg-[#193cb8] hover:bg-[#152f94]"
               disabled={(step === 1 && !canProceedStep1) || (step === 2 && !canProceedStep2)}
               onClick={() => setStep((s) => s + 1)}
             >
               Continue <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           ) : (
-            <Button
-              className="bg-[#193cb8] hover:bg-[#152f94]"
-              disabled={isSubmitting}
-              onClick={onSubmit}
-            >
+            <Button disabled={isSubmitting} onClick={onSubmit}>
               {isSubmitting ? 'Saving…' : isEdit ? 'Save changes' : 'Submit Report'}
             </Button>
           )}
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

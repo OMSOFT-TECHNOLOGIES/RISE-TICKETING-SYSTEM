@@ -79,15 +79,26 @@ export const SEVERITY_OPTIONS: SeverityOption[] = [
 
 export const DEFAULT_MAP_CENTER = { lat: 5.56, lng: -0.2057 };
 
+export const DEATH_TRAP_STATUS_COLORS: Record<string, string> = {
+  reported: '#193cb8',
+  acknowledged: '#6366f1',
+  in_progress: '#f97316',
+  resolved: '#22c55e',
+  escalated: '#ef4444',
+};
+
 export const DEFAULT_HAZARD_FORM = {
   type: 'fatal_pothole' as DeathTrapReport['type'],
   location: '',
   description: '',
   severityLevel: 'medium' as DeathTrapReport['severityLevel'],
   affectedRoutes: [] as string[],
+  affectedNotes: '',
   estimatedRepairCost: 0,
   coordinates: { lat: 0, lng: 0 },
   locationAddress: '',
+  reporterName: '',
+  reporterPhone: '',
 };
 
 export function calculatePriorityScore(severity: string, routeCount: number): number {

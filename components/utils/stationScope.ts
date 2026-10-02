@@ -14,6 +14,37 @@ export function isGlobalDataScope(role?: string): boolean {
   return GLOBAL_LIST_ROLES.includes(role as UserRole);
 }
 
+type StationLike = { id?: string; region?: string; district?: string };
+
+function normGeoLabel(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** Client-side filter when the API returns a broad list or the UI cached unscoped rows. */
+export function filterStationsForUser<T extends StationLike>(
+  stations: T[],
+  user?: { role?: string; stationId?: string; region?: string; district?: string } | null
+): T[] {
+  if (!user?.role) return stations;
+  if (user.role === 'super_admin' || user.role === 'admin') return stations;
+  if (user.role === 'regional_manager' && user.region?.trim()) {
+    const region = normGeoLabel(user.region);
+    return stations.filter((s) => normGeoLabel(String(s.region ?? '')) === region);
+  }
+  if (
+    (user.role === 'district_manager' || user.role === 'district_incident_reporter') &&
+    user.district?.trim()
+  ) {
+    const district = normGeoLabel(user.district);
+    return stations.filter((s) => normGeoLabel(String(s.district ?? '')) === district);
+  }
+  if (user.stationId) {
+    return stations.filter((s) => String(s.id) === String(user.stationId));
+  }
+  if (isGlobalDataScope(user.role)) return stations;
+  return stations;
+}
+
 /** Query params for list endpoints (vehicles, drivers, trips, tickets). */
 export function listParamsForUser(
   user: { role?: string; stationId?: string } | null | undefined,
@@ -45,6 +76,47 @@ export function stationIdForDataEntry(
   }
   const picked = pickedStationId?.trim();
   return picked || undefined;
+}
+
+/** Server-side station list filters for regional / district assignment roles. */
+export function stationListQueryForUser(
+  user?: { role?: string; region?: string; district?: string } | null
+): { region?: string; district?: string } {
+  if (!user?.role) return {};
+  if (user.role === 'regional_manager' && user.region?.trim()) {
+    return { region: user.region.trim() };
+  }
+  if (
+    (user.role === 'district_manager' || user.role === 'district_incident_reporter') &&
+    user.district?.trim()
+  ) {
+    return { district: user.district.trim() };
+  }
+  return {};
+}
+
+/** Roles that must pick a station before station-scoped lists load meaningful data. */
+export function deferListUntilStationPicked(
+  user?: { role?: string; stationId?: string } | null,
+  pickedStationId?: string
+): boolean {
+  if (!mustSelectStationForDataEntry(user?.role)) return false;
+  return !stationIdForDataEntry(user, pickedStationId);
+}
+
+export function emptyPaginatedListPayload(
+  entityKey: string,
+  limit = 20
+): Record<string, unknown> {
+  return {
+    [entityKey]: [],
+    pagination: {
+      page: 1,
+      limit,
+      totalItems: 0,
+      totalPages: 1,
+    },
+  };
 }
 
 /** List/query params: scoped roles use assignment; others use the station picked for data entry. */

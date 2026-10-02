@@ -31,12 +31,13 @@ interface UsePaginatedEntityListResult<T> {
   setPage: Dispatch<SetStateAction<number>>;
   pagination: ListPagination | null;
   pageSize: number;
+  setPageSize: Dispatch<SetStateAction<number>>;
 }
 
 export function usePaginatedEntityList<T>({
   fetchFn,
   entityKey,
-  pageSize = DEFAULT_LIST_PAGE_SIZE,
+  pageSize: initialPageSize = DEFAULT_LIST_PAGE_SIZE,
   errorMessage = 'Failed to load data',
   toastOnError = false,
   resetPageDeps = [],
@@ -46,12 +47,17 @@ export function usePaginatedEntityList<T>({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
   const [pagination, setPagination] = useState<ListPagination | null>(null);
 
   useEffect(() => {
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- explicit reset keys only
   }, resetPageDeps);
+
+  useEffect(() => {
+    setPage(1);
+  }, [pageSize]);
 
   const refresh = useCallback(
     async (options?: { toastOnError?: boolean }) => {
@@ -111,5 +117,6 @@ export function usePaginatedEntityList<T>({
     setPage,
     pagination,
     pageSize,
+    setPageSize,
   };
 }

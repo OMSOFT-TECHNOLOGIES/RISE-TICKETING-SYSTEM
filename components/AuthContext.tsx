@@ -20,7 +20,8 @@ export type UserRole =
   | 'incident_investigator'
   | 'hospital_incident_claimer'
   | 'station_manager'
-  | 'station_worker';
+  | 'station_worker'
+  | 'road_safety_manager';
 
 export interface User {
   id: string;
@@ -95,7 +96,8 @@ const rolePermissions: Record<UserRole, string[]> = {
     'manage_stations', 
     'manage_vehicles', 
     'manage_drivers',
-    'manage_trips', 
+    'manage_trips',
+    'manage_passengers',
     'view_reports', 
     'view_revenue', 
     'manage_incidents',
@@ -109,7 +111,8 @@ const rolePermissions: Record<UserRole, string[]> = {
     'manage_stations', 
     'manage_vehicles', 
     'manage_drivers',
-    'manage_trips', 
+    'manage_trips',
+    'manage_passengers',
     'view_reports', 
     'manage_incidents', 
     'view_death_traps'
@@ -142,6 +145,15 @@ const rolePermissions: Record<UserRole, string[]> = {
     'view_death_traps',
     'create_death_trap_reports',
     'view_reports' // Added for accident analysis access
+  ],
+
+  road_safety_manager: [
+    'view_dashboard',
+    'manage_incidents',
+    'view_incidents',
+    'view_death_traps',
+    'create_death_trap_reports',
+    'view_reports',
   ],
 
   incident_investigator: [

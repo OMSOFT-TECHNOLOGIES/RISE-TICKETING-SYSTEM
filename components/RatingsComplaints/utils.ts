@@ -146,7 +146,11 @@ export function getStatusLabel(status: string): string {
 export function getStatusStyles(status: string) {
   switch (status) {
     case 'pending':
-      return { dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50 border-amber-200/60' };
+      return {
+        dot: 'bg-amber-600',
+        text: 'text-amber-950 dark:text-amber-100',
+        bg: 'border-amber-300/90 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-600/40',
+      };
     case 'in_progress':
       return { dot: 'bg-[#193cb8]', text: 'text-[#193cb8]', bg: 'bg-[#193cb8]/5 border-[#193cb8]/20' };
     case 'resolved':

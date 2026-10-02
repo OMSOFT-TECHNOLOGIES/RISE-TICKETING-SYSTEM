@@ -1,7 +1,7 @@
 import type { NewAccidentForm } from './types';
 
 export const ACCIDENT_TAB_TRIGGER_CLASS =
-  'rounded-md py-2.5 text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:font-semibold data-[state=active]:ring-1 data-[state=active]:ring-red-700/40';
+  'justify-center gap-1.5 px-3 py-2 text-sm font-medium';
 
 export const DEFAULT_NEW_ACCIDENT: NewAccidentForm = {
   vehicleRegistrationNumber: '',

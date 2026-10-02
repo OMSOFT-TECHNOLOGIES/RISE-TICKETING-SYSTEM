@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Clock, Loader2, MapPin, QrCode, Ticket, User } from 'lucide-react';
+import { Calendar, Clock, MapPin, QrCode, Ticket, User } from 'lucide-react';
+import { RisePreloader } from './shared/feedback';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -42,9 +43,12 @@ export function ETicketPage({ token }: ETicketPageProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30">
-        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
-      </div>
+      <RisePreloader
+        variant="fullscreen"
+        label="Loading your e-ticket…"
+        showBrand
+        className="bg-muted/30 rise-auth-mesh"
+      />
     );
   }
 
@@ -110,11 +114,19 @@ export function ETicketPage({ token }: ETicketPageProps) {
                   {departure.time || '—'}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 col-span-2">
                 <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span>Seat {ticket.seatNumber}</span>
+                <span>
+                  {(ticket.seats ?? 1) > 1
+                    ? `${ticket.seats} seats · assignment ${ticket.seatNumber}`
+                    : `Seat ${ticket.seatNumber}`}
+                </span>
               </div>
-              <div className="font-semibold text-[#193cb8]">₵{ticket.fare.toFixed(2)}</div>
+              <div className="font-semibold text-[#193cb8] col-span-2">
+                {(ticket.seats ?? 1) > 1 && ticket.farePerSeat
+                  ? `₵${ticket.farePerSeat.toFixed(2)}/seat · ₵${ticket.fare.toFixed(2)} total`
+                  : `₵${ticket.fare.toFixed(2)}`}
+              </div>
             </div>
 
             <div className="rounded-lg border bg-muted/30 p-4 text-center">

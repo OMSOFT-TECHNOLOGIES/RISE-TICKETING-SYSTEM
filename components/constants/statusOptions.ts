@@ -38,7 +38,7 @@ export const statusOptions: Record<string, StatusOption[]> = {
   ],
   deathTrap: [
     { value: 'reported', label: 'Reported', color: 'blue' },
-    { value: 'acknowledged', label: 'Acknowledged', color: 'yellow' },
+    { value: 'acknowledged', label: 'Acknowledged', color: 'indigo' },
     { value: 'in_progress', label: 'In Progress', color: 'orange' },
     { value: 'resolved', label: 'Resolved', color: 'green' },
     { value: 'escalated', label: 'Escalated', color: 'red' },

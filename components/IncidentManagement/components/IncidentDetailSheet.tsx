@@ -4,7 +4,6 @@ import {
   Clock,
   MapPin,
   Pencil,
-  Phone,
   Shield,
   User,
   Users,
@@ -33,11 +32,15 @@ interface IncidentDetailSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   canManage?: boolean;
+  canRespond?: boolean;
+  canVerify?: boolean;
+  canInvestigatorConfirm?: boolean;
   onStatusChange?: (status: string) => Promise<void>;
   onConfirmPublicReport?: (payload: {
     confirmationStatus: 'confirmed' | 'rejected';
     confirmedByAgency: string;
   }) => Promise<void>;
+  onInvestigatorConfirm?: () => Promise<void>;
   onEdit?: () => void;
 }
 
@@ -70,8 +73,12 @@ export function IncidentDetailSheet({
   open,
   onOpenChange,
   canManage = false,
+  canRespond = false,
+  canVerify = false,
+  canInvestigatorConfirm = false,
   onStatusChange,
   onConfirmPublicReport,
+  onInvestigatorConfirm,
   onEdit,
 }: IncidentDetailSheetProps) {
   if (!incident) return null;
@@ -105,6 +112,15 @@ export function IncidentDetailSheet({
                 <DetailField label="Region" value={`${incident.region}${incident.district ? `, ${incident.district}` : ''}`} />
                 <DetailField label="Reported" value={formatIncidentDate(incident.reportedAt)} />
                 <DetailField label="Reporter" value={incident.reportedBy} />
+                {incident.contactNumber ? (
+                  <DetailField label="Reporter telephone" value={incident.contactNumber} />
+                ) : null}
+                {incident.type === 'accident' && incident.linkedAccidentId ? (
+                  <DetailField
+                    label="Accident analysis"
+                    value={incident.linkedAccidentId}
+                  />
+                ) : null}
                 <DetailField label="Last Updated" value={formatIncidentDate(incident.updatedAt)} />
                 {incident.reportSource === 'public' && (
                   <DetailField
@@ -128,14 +144,18 @@ export function IncidentDetailSheet({
               />
             </DetailSection>
 
-            {canManage && onStatusChange && onConfirmPublicReport && (
+            {onStatusChange && onConfirmPublicReport && (
               <>
                 <Separator />
                 <IncidentCaseActions
                   incident={incident}
                   canManage={canManage}
+                  canRespond={canRespond}
+                  canVerify={canVerify}
+                  canInvestigatorConfirm={canInvestigatorConfirm}
                   onStatusChange={onStatusChange}
                   onConfirmPublicReport={onConfirmPublicReport}
+                  onInvestigatorConfirm={onInvestigatorConfirm}
                 />
               </>
             )}
@@ -248,17 +268,11 @@ export function IncidentDetailSheet({
               </div>
             </DetailSection>
 
-            {(incident.contactNumber || incident.contactEmail) && (
+            {incident.contactEmail && (
               <>
                 <Separator />
-                <DetailSection title="Contact">
+                <DetailSection title="Reporter contact">
                   <div className="space-y-2">
-                    {incident.contactNumber && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Phone className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-mono">{incident.contactNumber}</span>
-                      </div>
-                    )}
                     {incident.contactEmail && (
                       <div className="flex items-center gap-2 text-sm">
                         <User className="h-4 w-4 text-muted-foreground" />

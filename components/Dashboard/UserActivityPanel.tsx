@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
+import { ScrollableTable } from '../shared/ScrollableTable';
 import { dashboardApi, userApi } from '../utils/api';
 import { getRoleBadgeClass } from '../utils/helpers';
 import {
@@ -85,8 +86,8 @@ export function UserActivityPanel() {
   const offlineUsers = filteredUsers.filter((user) => !user.isOnline);
 
   return (
-    <Card className="border-0 shadow-none">
-      <CardHeader className="pb-3">
+    <Card className="border-0 shadow-none bg-transparent">
+      <CardHeader className="pb-3 px-6 pt-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-sm font-semibold">
@@ -110,7 +111,7 @@ export function UserActivityPanel() {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-6 px-6 pb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="rounded-lg border bg-emerald-50/60 p-4">
             <div className="flex items-center justify-between">
@@ -186,10 +187,10 @@ function UserActivityTable({ users }: { users: UserActivitySummary['users'] }) {
   }
 
   return (
-    <div className="rounded-lg border overflow-hidden">
+    <ScrollableTable maxHeightClass="max-h-[320px]" minWidthClass="min-w-[800px]">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="hover:bg-transparent">
             <TableHead>User</TableHead>
             <TableHead>Role</TableHead>
             <TableHead>Session</TableHead>
@@ -231,6 +232,6 @@ function UserActivityTable({ users }: { users: UserActivitySummary['users'] }) {
           ))}
         </TableBody>
       </Table>
-    </div>
+    </ScrollableTable>
   );
 }

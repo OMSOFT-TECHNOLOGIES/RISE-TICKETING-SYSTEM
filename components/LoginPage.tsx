@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Alert, AlertDescription } from './ui/alert';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
 import { useAuth } from './AuthContext';
 import { authApi } from './utils/api';
 import {
@@ -29,6 +29,9 @@ import { notify } from './utils/notify';
 import { appEnv } from './utils/env';
 import { RiseLogo } from './layout/RiseLogo';
 
+/** Served from `/public` — background for the login brand panel */
+const LOGIN_HERO_VIDEO_SRC = '/13333965_1080_1920_30fps.mp4';
+
 export function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -52,7 +55,12 @@ export function LoginPage() {
         const errorMsg =
           'Invalid username or password. Please check your credentials and try again.';
         setError(errorMsg);
-        notify.error('Login Failed', { description: errorMsg, duration: 5000 });
+        notify.error('Login failed', { description: errorMsg, duration: 5000 });
+      } else {
+        notify.success('Welcome back', {
+          description: 'Signing you in to RISE…',
+          duration: 3000,
+        });
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Login failed. Please try again.';
@@ -119,9 +127,28 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-background">
-      {/* Brand panel */}
-      <div className="relative hidden lg:flex lg:w-[44%] xl:w-[42%] rise-auth-mesh text-white overflow-hidden">
-        <div className="absolute inset-0 rise-auth-grid pointer-events-none" aria-hidden />
+      {/* Brand panel — video background + brand overlay */}
+      <div className="relative hidden lg:flex lg:w-[44%] xl:w-[42%] text-white overflow-hidden bg-[#0a1020]">
+        <video
+          className="absolute inset-0 h-full w-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          aria-hidden
+        >
+          <source src={LOGIN_HERO_VIDEO_SRC} type="video/mp4" />
+        </video>
+        <div
+          className="absolute inset-0 pointer-events-none"
+          aria-hidden
+          style={{
+            background:
+              'linear-gradient(165deg, rgba(10,16,32,0.82) 0%, rgba(15,42,110,0.72) 45%, rgba(12,18,34,0.88) 100%)',
+          }}
+        />
+        <div className="absolute inset-0 rise-auth-grid pointer-events-none opacity-80" aria-hidden />
         <div className="relative z-10 flex flex-col justify-between p-10 xl:p-14 w-full">
           <RiseLogo variant="onBrand" />
 
@@ -172,7 +199,10 @@ export function LoginPage() {
             </p>
           </div>
 
-          <div className="rounded-2xl border bg-card p-6 sm:p-8 shadow-sm shadow-black/5">
+          <div className="relative rounded-2xl border bg-card p-6 sm:p-8 shadow-sm shadow-black/5">
+            {loading ? (
+              <RisePreloader variant="overlay" label="Signing in…" className="rounded-2xl" />
+            ) : null}
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
@@ -301,11 +331,11 @@ export function LoginPage() {
                 </div>
               </div>
 
-              {error && (
-                <Alert variant="destructive" className="rounded-xl">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
+              {error ? (
+                <RiseStatusAlert type="error" onDismiss={() => setError('')}>
+                  {error}
+                </RiseStatusAlert>
+              ) : null}
 
               <Button type="submit" className="w-full h-11 text-base font-medium" disabled={loading}>
                 {loading ? (
@@ -349,6 +379,14 @@ export function LoginPage() {
 
           <p className="text-center text-xs text-muted-foreground lg:text-left">
             Authorized personnel only · Secure · Reliable · Efficient
+          </p>
+          <p className="text-center text-sm lg:text-left">
+            <a
+              href="/report-hazard"
+              className="font-medium text-[#193cb8] hover:underline"
+            >
+              Report a road hazard (public, no login)
+            </a>
           </p>
         </div>
       </div>

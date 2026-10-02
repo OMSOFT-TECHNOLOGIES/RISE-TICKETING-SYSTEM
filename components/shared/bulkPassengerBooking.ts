@@ -58,6 +58,16 @@ export function validatePassengerBookingForm(
   return null;
 }
 
+export function validateBiometricPassengerBooking(
+  values: PassengerBookingFormValues,
+  options: PassengerBookingValidationOptions = {}
+): string | null {
+  if (!values.biometricReference?.trim()) {
+    return 'Capture passenger biometric before booking';
+  }
+  return validatePassengerBookingForm(values, options);
+}
+
 export function isPhoneBookedForTrip(
   phone: string,
   manifest: Array<{ phone?: string }>,

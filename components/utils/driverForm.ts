@@ -9,6 +9,7 @@ export function toDriverApiPayload(input: {
   address?: string;
   emergencyContact?: string;
   stationId?: string;
+  vehicleId?: string;
   status?: string;
 }) {
   let experience: number | undefined;
@@ -29,6 +30,7 @@ export function toDriverApiPayload(input: {
     address: input.address?.trim() || undefined,
     emergencyContact: input.emergencyContact?.trim() || undefined,
     stationId: input.stationId || undefined,
+    vehicleId: input.vehicleId?.trim() || undefined,
     status: input.status?.trim() || undefined,
   };
 }

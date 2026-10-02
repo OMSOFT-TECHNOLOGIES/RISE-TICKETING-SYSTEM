@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
-import { Card, CardContent } from './ui/card';
+import { BarChart3, LayoutGrid, MessageSquare, Star } from 'lucide-react';
+import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { useAuth } from './AuthContext';
 import { AccessRestricted } from './AccessRestricted';
 import { notify } from './utils/notify';
 import { feedbackApi } from './utils/api';
 import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
 import { FEEDBACK_TAB_TRIGGER_CLASS } from './RatingsComplaints/constants';
 import type {
   Complaint,
@@ -108,6 +110,8 @@ export function RatingsComplaints() {
     page: ratingsPage,
     setPage: setRatingsPage,
     pagination: ratingsPagination,
+    pageSize: ratingsPageSize,
+    setPageSize: setRatingsPageSize,
   } = usePaginatedEntityList<Rating>({
     fetchFn: fetchRatingsPage,
     entityKey: 'ratings',
@@ -125,6 +129,8 @@ export function RatingsComplaints() {
     page: complaintsPage,
     setPage: setComplaintsPage,
     pagination: complaintsPagination,
+    pageSize: complaintsPageSize,
+    setPageSize: setComplaintsPageSize,
   } = usePaginatedEntityList<Complaint>({
     fetchFn: fetchComplaintsPage,
     entityKey: 'complaints',
@@ -136,31 +142,28 @@ export function RatingsComplaints() {
       complaintFilters.category,
     ],
   });
+
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [responseText, setResponseText] = useState('');
 
   const loading = ratingsLoading || complaintsLoading;
   const error = ratingsError || complaintsError;
+  const hasAnyData = ratings.length > 0 || complaints.length > 0;
 
   const stats = useMemo(
     () => mergeStatsFromApi(calculateStats(ratings, complaints), apiStats),
     [ratings, complaints, apiStats]
   );
+
   const ratingDistribution = useMemo(() => {
     if (ratings.length === 0) return [];
-    return mapApiRatingDistribution(
-      apiRatingDistribution,
-      buildRatingDistribution(ratings)
-    );
+    return mapApiRatingDistribution(apiRatingDistribution, buildRatingDistribution(ratings));
   }, [ratings, apiRatingDistribution]);
 
   const complaintCategories = useMemo(() => {
     if (complaints.length === 0) return [];
-    return mapApiComplaintCategories(
-      apiComplaintCategories,
-      buildComplaintCategories(complaints)
-    );
+    return mapApiComplaintCategories(apiComplaintCategories, buildComplaintCategories(complaints));
   }, [complaints, apiComplaintCategories]);
 
   const ratingTrends = useMemo(() => {
@@ -219,115 +222,148 @@ export function RatingsComplaints() {
     refreshComplaints({ toastOnError: true });
   };
 
+  const handleRefresh = () => {
+    handleRetry();
+  };
+
   if (user?.role !== 'admin' && user?.role !== 'super_admin') {
     return (
       <AccessRestricted message="Only administrators can access ratings and complaints management." />
     );
   }
 
-  if (loading) {
+  if (loading && !hasAnyData && !error) {
     return (
-      <div className="min-h-full bg-muted/30 flex items-center justify-center py-24">
-        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-full bg-muted/30 flex flex-col items-center justify-center py-24 px-6 text-center">
-        <p className="text-sm text-muted-foreground mb-4">{error}</p>
-        <button
-          type="button"
-          onClick={handleRetry}
-          className="text-sm font-medium text-[#193cb8] hover:underline"
-        >
-          Try again
-        </button>
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading feedback…" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-muted/30">
-      <FeedbackCommandHeader
-        stats={stats}
-        onExportRatings={() => exportData('ratings')}
-        onExportComplaints={() => exportData('complaints')}
-      />
+    <div className="min-h-full rise-dashboard-page">
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        <FeedbackCommandHeader
+          stats={stats}
+          onExportRatings={() => void exportData('ratings')}
+          onExportComplaints={() => void exportData('complaints')}
+          onRefresh={handleRefresh}
+          loading={loading}
+        />
 
-      <div className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
+        {error && !hasAnyData ? (
+          <RiseStatusAlert type="error" title="Could not load feedback">
+            {error}
+            <Button variant="outline" size="sm" className="mt-3" onClick={handleRetry}>
+              Try again
+            </Button>
+          </RiseStatusAlert>
+        ) : null}
+
+        {error && hasAnyData && !loading ? (
+          <RiseStatusAlert type="warning" title="Some feedback data may be incomplete">
+            {error}
+          </RiseStatusAlert>
+        ) : null}
+
+        {stats.pendingComplaints > 0 ? (
+          <RiseStatusAlert type="warning" title="Complaints awaiting response">
+            {stats.pendingComplaints} complaint{stats.pendingComplaints !== 1 ? 's' : ''} need
+            attention. Open the Complaints tab to review and respond.
+          </RiseStatusAlert>
+        ) : null}
+
         <FeedbackKpiDashboard stats={stats} />
 
-        <Card className="border shadow-none">
-          <CardContent className="p-0">
-            <Tabs defaultValue="overview" className="w-full">
-              <div className="px-5 pt-5 pb-0 border-b">
-                <TabsList className="grid w-full grid-cols-4 h-auto gap-1 bg-muted/50 p-1.5 rounded-lg border shadow-none">
+        <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 overflow-hidden border-0">
+          <Tabs defaultValue="overview" className="w-full">
+            <CardHeader className="border-b border-border/60 bg-muted/20 pb-4 space-y-4">
+              <div>
+                <CardTitle className="text-lg font-semibold">Feedback workspace</CardTitle>
+                <CardDescription className="mt-1">
+                  Overview charts, ratings registry, complaint queue, and analytics.
+                </CardDescription>
+              </div>
+              <div className="rise-segment-tabs w-full overflow-x-auto">
+                <TabsList className="grid w-full min-w-[640px] grid-cols-4">
                   <TabsTrigger value="overview" className={FEEDBACK_TAB_TRIGGER_CLASS}>
+                    <LayoutGrid className="h-4 w-4 shrink-0 opacity-80 hidden sm:block" />
                     Overview
                   </TabsTrigger>
                   <TabsTrigger value="ratings" className={FEEDBACK_TAB_TRIGGER_CLASS}>
+                    <Star className="h-4 w-4 shrink-0 opacity-80 hidden sm:block" />
                     Ratings
+                    <span className="rise-segment-tab-count">
+                      {ratingsPagination?.totalItems ?? ratings.length}
+                    </span>
                   </TabsTrigger>
                   <TabsTrigger value="complaints" className={FEEDBACK_TAB_TRIGGER_CLASS}>
+                    <MessageSquare className="h-4 w-4 shrink-0 opacity-80 hidden sm:block" />
                     Complaints
+                    <span className="rise-segment-tab-count">
+                      {complaintsPagination?.totalItems ?? complaints.length}
+                    </span>
                   </TabsTrigger>
                   <TabsTrigger value="analytics" className={FEEDBACK_TAB_TRIGGER_CLASS}>
+                    <BarChart3 className="h-4 w-4 shrink-0 opacity-80 hidden sm:block" />
                     Analytics
                   </TabsTrigger>
                 </TabsList>
               </div>
+            </CardHeader>
 
-              <div className="p-5">
-                <TabsContent value="overview" className="mt-0">
-                  <OverviewTab
-                    ratingDistribution={ratingDistribution}
-                    complaintCategories={complaintCategories}
-                  />
-                </TabsContent>
+            <CardContent className="p-4 sm:p-6">
+              <TabsContent value="overview" className="mt-0">
+                <OverviewTab
+                  ratingDistribution={ratingDistribution}
+                  complaintCategories={complaintCategories}
+                />
+              </TabsContent>
 
-                <TabsContent value="ratings" className="mt-0">
-                  <RatingsTab
-                    ratings={ratings}
-                    filters={ratingFilters}
-                    onFiltersChange={(updates) =>
-                      setRatingFilters((prev) => ({ ...prev, ...updates }))
-                    }
-                    onExport={() => exportData('ratings')}
-                    page={ratingsPage}
-                    pagination={ratingsPagination}
-                    onPageChange={setRatingsPage}
-                    loading={ratingsLoading}
-                  />
-                </TabsContent>
+              <TabsContent value="ratings" className="mt-0">
+                <RatingsTab
+                  ratings={ratings}
+                  filters={ratingFilters}
+                  onFiltersChange={(updates) =>
+                    setRatingFilters((prev) => ({ ...prev, ...updates }))
+                  }
+                  onExport={() => void exportData('ratings')}
+                  page={ratingsPage}
+                  pagination={ratingsPagination}
+                  onPageChange={setRatingsPage}
+                  pageSize={ratingsPageSize}
+                  onPageSizeChange={setRatingsPageSize}
+                  loading={ratingsLoading}
+                />
+              </TabsContent>
 
-                <TabsContent value="complaints" className="mt-0">
-                  <ComplaintsTab
-                    complaints={complaints}
-                    filters={complaintFilters}
-                    onFiltersChange={(updates) =>
-                      setComplaintFilters((prev) => ({ ...prev, ...updates }))
-                    }
-                    onViewComplaint={handleViewComplaint}
-                    onExport={() => exportData('complaints')}
-                    page={complaintsPage}
-                    pagination={complaintsPagination}
-                    onPageChange={setComplaintsPage}
-                    loading={complaintsLoading}
-                  />
-                </TabsContent>
+              <TabsContent value="complaints" className="mt-0">
+                <ComplaintsTab
+                  complaints={complaints}
+                  filters={complaintFilters}
+                  onFiltersChange={(updates) =>
+                    setComplaintFilters((prev) => ({ ...prev, ...updates }))
+                  }
+                  onViewComplaint={handleViewComplaint}
+                  onExport={() => void exportData('complaints')}
+                  page={complaintsPage}
+                  pagination={complaintsPagination}
+                  onPageChange={setComplaintsPage}
+                  pageSize={complaintsPageSize}
+                  onPageSizeChange={setComplaintsPageSize}
+                  loading={complaintsLoading}
+                />
+              </TabsContent>
 
-                <TabsContent value="analytics" className="mt-0">
-                  <AnalyticsTab
-                    stats={stats}
-                    ratingTrends={ratingTrends}
-                    complaintCategories={complaintCategories}
-                  />
-                </TabsContent>
-              </div>
-            </Tabs>
-          </CardContent>
+              <TabsContent value="analytics" className="mt-0">
+                <AnalyticsTab
+                  stats={stats}
+                  ratingTrends={ratingTrends}
+                  complaintCategories={complaintCategories}
+                />
+              </TabsContent>
+            </CardContent>
+          </Tabs>
         </Card>
       </div>
 
@@ -337,7 +373,8 @@ export function RatingsComplaints() {
         responseText={responseText}
         onResponseTextChange={setResponseText}
         onOpenChange={setShowDetail}
-        onSubmitResponse={handleResponseSubmit}
+        onSubmitResponse={() => void handleResponseSubmit()}
+        isSubmitting={isSubmitting}
       />
     </div>
   );

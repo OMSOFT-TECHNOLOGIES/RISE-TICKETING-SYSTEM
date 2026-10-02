@@ -9,6 +9,8 @@ export const stationApi = {
     district?: string;
     status?: string;
     search?: string;
+    /** Trip assignment / admin lists: bypass caller region scope when supported. */
+    allRegions?: boolean;
   }): Promise<ApiResponse> => {
     const queryParams = new URLSearchParams();
     if (params?.page) queryParams.append('page', params.page.toString());
@@ -17,6 +19,7 @@ export const stationApi = {
     if (params?.district) queryParams.append('district', params.district);
     if (params?.status) queryParams.append('status', params.status);
     if (params?.search) queryParams.append('search', params.search);
+    if (params?.allRegions) queryParams.append('allRegions', 'true');
 
     const queryString = queryParams.toString();
     return apiRequest(`/api/stations${queryString ? `?${queryString}` : ''}`, {

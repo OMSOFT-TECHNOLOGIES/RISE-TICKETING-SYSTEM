@@ -3,7 +3,17 @@ import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { MapPin, Search, Navigation, RotateCcw, AlertCircle, Loader2 } from 'lucide-react';
+import {
+  MapPin,
+  Search,
+  Navigation,
+  RotateCcw,
+  AlertCircle,
+  Loader2,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
+import { cn } from './ui/utils';
 import { Badge } from './ui/badge';
 import { notify } from './utils/notify';
 import { GHANA_BOUNDS, DEFAULT_MAP_CENTER } from './IncidentManagement/constants';
@@ -18,6 +28,9 @@ interface MapLocationPickerProps {
   onLocationSelect: (location: { lat: number; lng: number; address?: string }) => void;
   initialLocation?: { lat: number; lng: number };
   className?: string;
+  /** Allow fullscreen map (helpful on mobile). Default true. */
+  allowExpand?: boolean;
+  compactHeightClass?: string;
 }
 
 interface SelectedLocation {
@@ -30,6 +43,8 @@ export function MapLocationPicker({
   onLocationSelect,
   initialLocation = DEFAULT_MAP_CENTER,
   className = '',
+  allowExpand = true,
+  compactHeightClass = 'h-56 sm:h-80',
 }: MapLocationPickerProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -43,6 +58,7 @@ export function MapLocationPicker({
   const [isLoading, setIsLoading] = useState(false);
   const [mapLoading, setMapLoading] = useState(true);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [mapExpanded, setMapExpanded] = useState(false);
 
   const onLocationSelectRef = useRef(onLocationSelect);
   onLocationSelectRef.current = onLocationSelect;
@@ -147,6 +163,16 @@ export function MapLocationPicker({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- map initializes once
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    window.setTimeout(() => {
+      google.maps.event.trigger(map, 'resize');
+      const center = selectedLocation ?? initialLocation;
+      if (center) map.setCenter(center);
+    }, 150);
+  }, [mapExpanded, selectedLocation, initialLocation]);
 
   const handleQuickLocation = (location: (typeof GHANA_MAP_QUICK_LOCATIONS)[number]) => {
     const loc = { lat: location.lat, lng: location.lng, address: location.name };
@@ -273,26 +299,53 @@ export function MapLocationPicker({
   };
 
   return (
-    <Card className={className}>
-      <CardContent className="p-4">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
+    <Card
+      className={cn(
+        className,
+        mapExpanded && 'fixed inset-0 z-[100] m-0 rounded-none border-0 shadow-none h-[100dvh] flex flex-col'
+      )}
+    >
+      <CardContent className={cn('p-4 flex flex-col flex-1 min-h-0', mapExpanded && 'pb-6')}>
+        <div className="space-y-4 flex flex-col flex-1 min-h-0">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Label className="flex items-center gap-2">
               <MapPin className="h-4 w-4" />
               Select Location on Map
             </Label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
-                variant="outline"
+                variant="default"
                 size="sm"
                 onClick={handleCurrentLocation}
                 disabled={isLoading || mapLoading || !!mapError}
-                className="flex items-center gap-1"
+                className="flex items-center gap-1 bg-[#193cb8] hover:bg-[#152f94]"
               >
                 <Navigation className="h-3 w-3" />
-                {isLoading ? 'Getting...' : 'My Location'}
+                {isLoading ? 'Getting...' : 'Use current location'}
               </Button>
+              {allowExpand ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMapExpanded((v) => !v)}
+                  disabled={mapLoading || !!mapError}
+                  className="flex items-center gap-1"
+                >
+                  {mapExpanded ? (
+                    <>
+                      <Minimize2 className="h-3 w-3" />
+                      Close map
+                    </>
+                  ) : (
+                    <>
+                      <Maximize2 className="h-3 w-3" />
+                      Expand map
+                    </>
+                  )}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
@@ -345,7 +398,12 @@ export function MapLocationPicker({
             </div>
           </div>
 
-          <div className="relative w-full h-80 rounded-lg border overflow-hidden bg-muted">
+          <div
+            className={cn(
+              'relative w-full rounded-lg border overflow-hidden bg-muted flex-1 min-h-[220px]',
+              mapExpanded ? 'h-[min(70dvh,560px)] sm:h-[min(75dvh,640px)]' : compactHeightClass
+            )}
+          >
             <div ref={mapContainerRef} className="absolute inset-0" />
             {mapLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-muted/80 z-10">

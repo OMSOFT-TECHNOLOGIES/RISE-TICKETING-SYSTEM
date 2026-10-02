@@ -71,6 +71,8 @@ export function getStatusStyles(status: string): { dot: string; text: string; bg
   switch (status) {
     case 'reported':
       return { dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50 border-amber-200/60' };
+    case 'confirmed':
+      return { dot: 'bg-sky-500', text: 'text-sky-800', bg: 'bg-sky-50 border-sky-200/60' };
     case 'investigating':
       return { dot: 'bg-[#193cb8]', text: 'text-[#193cb8]', bg: 'bg-[#193cb8]/5 border-[#193cb8]/20' };
     case 'resolved':
@@ -119,6 +121,10 @@ export function validateNewIncident(
 ): string | null {
   if (!form.title || !form.description || !form.type || !form.severity || !form.region) {
     return 'Please fill in all required fields (including region)';
+  }
+  const reporterPhone = form.contactNumber.replace(/\D/g, '');
+  if (!form.contactNumber.trim() || reporterPhone.length < 9) {
+    return 'Please enter a valid reporter telephone number';
   }
   if (form.vehicleMode === 'public' && !form.registeredVehicleId) {
     return 'Select a registered public vehicle or switch to Other vehicle';

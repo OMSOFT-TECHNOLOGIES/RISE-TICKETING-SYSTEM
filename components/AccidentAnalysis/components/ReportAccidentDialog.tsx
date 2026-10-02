@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { AlertTriangle, Check, ChevronsUpDown, Loader2 } from 'lucide-react';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '../../ui/dialog';
@@ -76,18 +78,22 @@ export function ReportAccidentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-red-600" />
-            Report New Accident
-          </DialogTitle>
-          <DialogDescription>
-            Select the vehicle involved. The latest trip for that vehicle is linked automatically.
-          </DialogDescription>
+      <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden rounded-2xl">
+        <DialogHeader className="border-b border-border/80 bg-gradient-to-br from-muted/50 to-background px-6 py-5">
+          <div className="flex items-start gap-4 pr-6">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/20">
+              <AlertTriangle className="h-5 w-5" strokeWidth={2.25} />
+            </span>
+            <div className="space-y-1 min-w-0">
+              <DialogTitle className="text-xl font-semibold tracking-tight">Report accident</DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed">
+                Select the vehicle involved. The latest trip for that registration is linked automatically.
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <DialogBody className="px-6 py-5 space-y-4 max-h-[min(58vh,520px)]">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="vehicle-number">Vehicle Number *</Label>
@@ -296,29 +302,26 @@ export function ReportAccidentDialog({
             </div>
           </div>
 
-          <div className="flex gap-2 pt-2">
-            <Button
-              onClick={onSubmit}
-              className="flex-1 bg-[#193cb8] hover:bg-[#152f94]"
-              disabled={isSubmitting || latestTripLoading || !latestTrip?.tripId}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Submitting…
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="h-4 w-4 mr-2" />
-                  Submit Report
-                </>
-              )}
-            </Button>
-            <Button variant="outline" onClick={onCancel} disabled={isSubmitting}>
-              Cancel
-            </Button>
-          </div>
-        </div>
+        </DialogBody>
+
+        <DialogFooter className="gap-2 sm:gap-2 bg-muted/20">
+          <Button variant="outline" onClick={onCancel} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={onSubmit}
+            disabled={isSubmitting || latestTripLoading || !latestTrip?.tripId}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Submitting…
+              </>
+            ) : (
+              'Submit report'
+            )}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

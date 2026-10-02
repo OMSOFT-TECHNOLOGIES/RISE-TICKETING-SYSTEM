@@ -62,7 +62,9 @@ export function AccidentDetailSheet({ accident, open, onOpenChange }: AccidentDe
             <DetailSection title="Overview">
               <div className="grid grid-cols-2 gap-4">
                 <DetailField label="Date & Time" value={formatAccidentDate(accident.date)} />
+                <DetailField label="Source incident" value={accident.incidentId} />
                 <DetailField label="Trip ID" value={accident.tripId} />
+                <DetailField label="District" value={accident.district} />
                 <DetailField label="Reported By" value={accident.reportedBy} />
                 <DetailField label="Time of Day" value={formatSnakeLabel(accident.timeOfDay)} />
               </div>

@@ -438,11 +438,25 @@ export function parseListResponse<T>(
     return data as T[];
   }
 
-  if (data && typeof data === 'object' && entityKey) {
+  if (data && typeof data === 'object') {
     const record = data as Record<string, unknown>;
-    const items = record[entityKey];
-    if (Array.isArray(items)) {
-      return items as T[];
+
+    if (entityKey && Array.isArray(record[entityKey])) {
+      return record[entityKey] as T[];
+    }
+
+    for (const key of ['items', 'results', 'records'] as const) {
+      if (Array.isArray(record[key])) {
+        return record[key] as T[];
+      }
+    }
+
+    const nested = record.data;
+    if (nested && typeof nested === 'object' && entityKey) {
+      const inner = (nested as Record<string, unknown>)[entityKey];
+      if (Array.isArray(inner)) {
+        return inner as T[];
+      }
     }
   }
 

@@ -90,8 +90,18 @@ export const incidentApi = {
     return apiRequest(`/api/incidents/${id}`, { method: 'DELETE' });
   },
 
-  getStatistics: async (): Promise<ApiResponse> => {
-    return apiRequest('/api/incidents/statistics', { method: 'GET' });
+  getStatistics: async (params?: {
+    region?: string;
+    district?: string;
+  }): Promise<ApiResponse> => {
+    const queryParams = new URLSearchParams();
+    if (params?.region) queryParams.append('region', params.region);
+    if (params?.district) queryParams.append('district', params.district);
+    const queryString = queryParams.toString();
+    return apiRequest(
+      `/api/incidents/statistics${queryString ? `?${queryString}` : ''}`,
+      { method: 'GET' }
+    );
   },
 
   uploadEvidence: async (id: string, file: File): Promise<ApiResponse> => {
@@ -131,6 +141,12 @@ export const incidentApi = {
     return apiRequest(`/api/incidents/${id}/confirm`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    });
+  },
+
+  investigatorConfirm: async (id: string): Promise<ApiResponse> => {
+    return apiRequest(`/api/incidents/${encodeURIComponent(id)}/investigator-confirm`, {
+      method: 'PATCH',
     });
   },
 

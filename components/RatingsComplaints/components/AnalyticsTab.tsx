@@ -14,7 +14,7 @@ export function AnalyticsTab({ stats, ratingTrends, complaintCategories }: Analy
 
   return (
     <div className="space-y-6">
-      <Card className="border shadow-none">
+      <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 border-0">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold">Rating Trends</CardTitle>
           <CardDescription>Average rating and volume over time</CardDescription>
@@ -58,7 +58,7 @@ export function AnalyticsTab({ stats, ratingTrends, complaintCategories }: Analy
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border shadow-none">
+        <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 border-0">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">Performance Insights</CardTitle>
             <CardDescription>Key customer experience indicators</CardDescription>
@@ -88,7 +88,7 @@ export function AnalyticsTab({ stats, ratingTrends, complaintCategories }: Analy
           </CardContent>
         </Card>
 
-        <Card className="border shadow-none">
+        <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 border-0">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">Top Issues</CardTitle>
             <CardDescription>Most common complaint categories</CardDescription>

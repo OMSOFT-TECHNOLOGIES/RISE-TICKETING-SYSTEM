@@ -1,6 +1,7 @@
 import {
   isHospitalIncidentClaimerPage,
   isIncidentInvestigatorPage,
+  isRoadSafetyManagerPage,
   isSafetyIncidentPage,
   isStationManagerPage,
   isStationWorkerPage,
@@ -8,8 +9,10 @@ import {
 } from '../config/pages';
 import {
   isDistrictIncidentReporterRole,
+  isEmergencyServiceRole,
   isHospitalIncidentClaimerRole,
   isIncidentInvestigatorRole,
+  isRoadSafetyManagerRole,
 } from '../constants/userRoles';
 
 type PermissionChecker = (permission: string) => boolean;
@@ -36,6 +39,14 @@ export function canViewNavItem(
     return isHospitalIncidentClaimerPage(item.id);
   }
 
+  if (isEmergencyServiceRole(userRole)) {
+    return item.id === 'dashboard' || item.id === 'incidents';
+  }
+
+  if (isRoadSafetyManagerRole(userRole)) {
+    return isRoadSafetyManagerPage(item.id);
+  }
+
   if (isDistrictIncidentReporterRole(userRole) && isSafetyIncidentPage(item.id)) {
     return true;
   }
@@ -60,13 +71,26 @@ export function canViewNavItem(
         hasPermission('view_claims')
       );
     case 'death-traps':
-      return hasPermission('view_death_traps') || hasPermission('create_death_trap_reports');
+      return (
+        hasPermission('view_death_traps') ||
+        hasPermission('create_death_trap_reports') ||
+        isRoadSafetyManagerRole(userRole)
+      );
     case 'stations':
       return hasPermission('manage_stations');
     case 'incidents':
-      return hasPermission('manage_incidents');
+      return (
+        hasPermission('manage_incidents') ||
+        hasPermission('view_incidents') ||
+        hasPermission('respond_incidents') ||
+        isRoadSafetyManagerRole(userRole)
+      );
     case 'accident-analysis':
-      return hasPermission('view_reports') || hasPermission('manage_incidents');
+      return (
+        hasPermission('view_reports') ||
+        hasPermission('manage_incidents') ||
+        isRoadSafetyManagerRole(userRole)
+      );
     case 'tickets':
       return hasPermission('view_tickets');
     case 'accounts':
@@ -100,6 +124,10 @@ export function isNavItemRestricted(
     return false;
   }
 
+  if (isRoadSafetyManagerRole(userRole) && isRoadSafetyManagerPage(item.id)) {
+    return false;
+  }
+
   switch (item.id) {
     case 'users':
       return !hasPermission('manage_users');
@@ -115,7 +143,8 @@ export function isNavItemRestricted(
       return (
         !hasPermission('view_death_traps') &&
         !hasPermission('create_death_trap_reports') &&
-        !isDistrictIncidentReporterRole(userRole)
+        !isDistrictIncidentReporterRole(userRole) &&
+        userRole !== 'road_safety_manager'
       );
     default:
       return false;

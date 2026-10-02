@@ -24,6 +24,7 @@ interface ComplaintDetailSheetProps {
   onResponseTextChange: (text: string) => void;
   onOpenChange: (open: boolean) => void;
   onSubmitResponse: () => void;
+  isSubmitting?: boolean;
 }
 
 function DetailField({ label, value }: { label: string; value?: React.ReactNode }) {
@@ -43,13 +44,14 @@ export function ComplaintDetailSheet({
   onResponseTextChange,
   onOpenChange,
   onSubmitResponse,
+  isSubmitting = false,
 }: ComplaintDetailSheetProps) {
   if (!complaint) return null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-xl p-0 flex flex-col gap-0">
-        <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+        <SheetHeader className="px-6 pt-6 pb-4 border-b border-border/80 bg-gradient-to-br from-muted/50 to-background shrink-0">
           <span className="font-mono text-xs text-muted-foreground">{complaint.id}</span>
           <SheetTitle className="text-left text-lg leading-snug">{complaint.passengerName}</SheetTitle>
           <SheetDescription className="text-left">{getCategoryLabel(complaint.category)}</SheetDescription>
@@ -132,9 +134,9 @@ export function ComplaintDetailSheet({
                     onChange={(e) => onResponseTextChange(e.target.value)}
                     rows={4}
                   />
-                  <Button onClick={onSubmitResponse} className="w-full bg-[#193cb8] hover:bg-[#152f94]">
+                  <Button onClick={onSubmitResponse} className="w-full" disabled={isSubmitting}>
                     <Send className="h-4 w-4 mr-2" />
-                    Send Response
+                    {isSubmitting ? 'Sending…' : 'Send response'}
                   </Button>
                 </div>
               </>

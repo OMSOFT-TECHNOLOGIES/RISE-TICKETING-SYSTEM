@@ -5,12 +5,15 @@ import {
   isStationWorkerPage,
   pagePermissions,
   restrictionMessages,
+  isRoadSafetyManagerPage,
   type RestrictionMessage,
 } from '../config/pages';
 import {
   isDistrictIncidentReporterRole,
+  isEmergencyServiceRole,
   isHospitalIncidentClaimerRole,
   isIncidentInvestigatorRole,
+  isRoadSafetyManagerRole,
 } from '../constants/userRoles';
 
 export type { RestrictionMessage };
@@ -27,17 +30,23 @@ export const customAccessChecks: Record<
     hasPermission('view_reports') ||
     hasPermission('manage_incidents') ||
     isDistrictIncidentReporterRole(userRole) ||
-    isIncidentInvestigatorRole(userRole),
+    isIncidentInvestigatorRole(userRole) ||
+    isRoadSafetyManagerRole(userRole),
 
   'death-traps': (hasPermission, userRole) =>
     hasPermission('view_death_traps') ||
     hasPermission('create_death_trap_reports') ||
-    isDistrictIncidentReporterRole(userRole),
+    isDistrictIncidentReporterRole(userRole) ||
+    isRoadSafetyManagerRole(userRole),
 
   incidents: (hasPermission, userRole) =>
     hasPermission('manage_incidents') ||
+    hasPermission('view_incidents') ||
+    hasPermission('respond_incidents') ||
     isDistrictIncidentReporterRole(userRole) ||
-    isIncidentInvestigatorRole(userRole),
+    isIncidentInvestigatorRole(userRole) ||
+    isEmergencyServiceRole(userRole) ||
+    isRoadSafetyManagerRole(userRole),
 
   'incident-claims': (hasPermission, userRole) =>
     hasPermission('manage_claims') ||
@@ -73,6 +82,14 @@ export function checkPageAccess(
 
   if (isHospitalIncidentClaimerRole(userRole)) {
     return isHospitalIncidentClaimerPage(page);
+  }
+
+  if (isRoadSafetyManagerRole(userRole)) {
+    return isRoadSafetyManagerPage(page);
+  }
+
+  if (isEmergencyServiceRole(userRole)) {
+    return page === 'incidents' || page === 'dashboard';
   }
 
   if (customAccessChecks[page]) {

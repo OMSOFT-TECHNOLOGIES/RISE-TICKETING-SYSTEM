@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import { notify } from './utils/notify';
 import { incidentApi, parseListResponse, vehicleApi } from './utils/api';
 import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
 import { TablePagination } from './shared/TablePagination';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
+import { Button } from './ui/button';
 import { DEFAULT_NEW_INCIDENT } from './IncidentManagement/constants';
 import type {
   FleetVehicleOption,
@@ -33,12 +34,31 @@ function normalizeIncidentRecord(raw: Record<string, unknown>): Incident {
   const evidenceFiles = Array.isArray(evidenceRaw)
     ? evidenceRaw.map((entry) => String(entry)).filter(Boolean)
     : [];
-  return { ...(raw as Incident), evidenceFiles };
+  let coordinates = (raw as Incident).coordinates;
+  if (!coordinates && raw.latitude != null && raw.longitude != null) {
+    coordinates = {
+      lat: Number(raw.latitude),
+      lng: Number(raw.longitude),
+    };
+  }
+  const coordsRaw = raw.coordinates;
+  if (!coordinates && coordsRaw && typeof coordsRaw === 'object') {
+    const c = coordsRaw as Record<string, unknown>;
+    if (c.lat != null && c.lng != null) {
+      coordinates = { lat: Number(c.lat), lng: Number(c.lng) };
+    }
+  }
+  return { ...(raw as Incident), evidenceFiles, coordinates };
 }
 
 export function IncidentManagement() {
   const { user, hasPermission } = useAuth();
   const canManage = hasPermission('manage_incidents');
+  const canRespond = hasPermission('respond_incidents');
+  const canVerify = hasPermission('verify_incidents');
+  const canInvestigatorConfirm =
+    hasPermission('approve_claims') || canManage;
+  const canUseCaseWorkflow = canManage || canRespond || canVerify || canInvestigatorConfirm;
 
   const [filters, setFilters] = useState<IncidentFilters>({
     search: '',
@@ -70,6 +90,8 @@ export function IncidentManagement() {
     page,
     setPage,
     pagination,
+    pageSize,
+    setPageSize,
   } = usePaginatedEntityList<Incident>({
     fetchFn: fetchIncidents,
     entityKey: 'incidents',
@@ -80,6 +102,7 @@ export function IncidentManagement() {
   const [stats, setStats] = useState<IncidentStats>({
     total: 0,
     reported: 0,
+    confirmed: 0,
     investigating: 0,
     resolved: 0,
     critical: 0,
@@ -93,6 +116,7 @@ export function IncidentManagement() {
     setStats({
       total: Number(data.total ?? 0),
       reported: Number(data.reported ?? 0),
+      confirmed: Number(data.confirmed ?? 0),
       investigating: Number(data.investigating ?? 0),
       resolved: Number(data.resolved ?? 0),
       critical: Number(data.critical ?? 0),
@@ -118,7 +142,7 @@ export function IncidentManagement() {
     if (!incidentFormOpen) return;
     if (incidentFormMode === 'create') {
       setIncidentForm((prev) => ({
-        ...prev,
+      ...prev,
         region: prev.region || user?.region || '',
       }));
     }
@@ -173,6 +197,26 @@ export function IncidentManagement() {
     }
     patchSelectedIncident(response.data as Incident);
     notify.success('Incident status updated');
+    await refresh();
+    await loadStatistics();
+  };
+
+  const handleInvestigatorConfirm = async () => {
+    if (!selectedIncident) return;
+    const response = await incidentApi.investigatorConfirm(selectedIncident.id);
+    if (!response.success) {
+      notify.error(typeof response.error === 'string' ? response.error : 'Confirmation failed');
+      return;
+    }
+    const updated = response.data as Incident;
+    patchSelectedIncident(updated);
+    if (updated.type === 'accident' && updated.linkedAccidentId) {
+      notify.success(
+        `Incident confirmed. Accident Analysis record ${updated.linkedAccidentId} created for the Road Safety Manager.`
+      );
+    } else {
+      notify.success('Incident confirmed — open to emergency services and hospital claims');
+    }
     await refresh();
     await loadStatistics();
   };
@@ -300,38 +344,39 @@ export function IncidentManagement() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-full bg-muted/30 flex items-center justify-center py-24">
-        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
-      </div>
-    );
-  }
+  const refreshAll = useCallback(async () => {
+    await refresh({ toastOnError: true });
+    await loadStatistics();
+  }, [refresh, loadStatistics]);
 
-  if (error) {
+  if (loading && incidents.length === 0 && !error) {
     return (
-      <div className="min-h-full bg-muted/30 flex flex-col items-center justify-center py-24 px-6 text-center">
-        <p className="text-sm text-muted-foreground mb-4">{error}</p>
-        <button
-          type="button"
-          onClick={() => refresh({ toastOnError: true })}
-          className="text-sm font-medium text-[#193cb8] hover:underline"
-        >
-          Try again
-        </button>
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading incidents…" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-muted/30">
-      <IncidentCommandHeader
-        stats={stats}
-        canReport={canManage}
-        onReportClick={openCreateIncidentForm}
-      />
+    <div className="min-h-full rise-dashboard-page">
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        <IncidentCommandHeader
+          stats={stats}
+          canReport={canManage}
+          onReportClick={openCreateIncidentForm}
+          onRefresh={() => void refreshAll()}
+          loading={loading}
+        />
 
-      <div className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
+        {error ? (
+          <RiseStatusAlert type="error" title="Could not load incidents">
+            {error}
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => void refreshAll()}>
+              Try again
+            </Button>
+          </RiseStatusAlert>
+        ) : null}
+
         <IncidentKpiDashboard stats={stats} />
 
         <IncidentWorkspace
@@ -342,29 +387,34 @@ export function IncidentManagement() {
           onFiltersChange={(updates) => setFilters((prev) => ({ ...prev, ...updates }))}
           onViewModeChange={setViewMode}
         >
-          {viewMode === 'table' ? (
-            <>
-              <IncidentTable
+          <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
+            {viewMode === 'table' ? (
+              <>
+                <IncidentTable
+                  incidents={incidents}
+                  canManage={canManage}
+                  onView={handleViewIncident}
+                />
+                <TablePagination
+                  page={page}
+                  pagination={pagination}
+                  onPageChange={setPage}
+                  loading={loading}
+                  itemLabel="cases"
+                  pageSize={pageSize}
+                  onPageSizeChange={setPageSize}
+                  alwaysShow
+                  className="px-4 sm:px-6 pb-4 pt-2 border-t border-border/60"
+                />
+              </>
+            ) : (
+              <IncidentMapView
                 incidents={incidents}
-                canManage={canManage}
-                onView={handleViewIncident}
+                selectedId={selectedIncident?.id ?? null}
+                onSelectIncident={handleViewIncident}
               />
-              <TablePagination
-                page={page}
-                pagination={pagination}
-                onPageChange={setPage}
-                loading={loading}
-                itemLabel="cases"
-                className="px-4 pb-4 mt-0 border-t-0"
-              />
-            </>
-          ) : (
-            <IncidentMapView
-              incidents={incidents}
-              selectedId={selectedIncident?.id ?? null}
-              onSelectIncident={handleViewIncident}
-            />
-          )}
+            )}
+          </div>
         </IncidentWorkspace>
       </div>
 
@@ -396,8 +446,12 @@ export function IncidentManagement() {
         open={showDetail}
         onOpenChange={setShowDetail}
         canManage={canManage}
+        canRespond={canRespond}
+        canVerify={canVerify}
+        canInvestigatorConfirm={canInvestigatorConfirm}
         onStatusChange={handleIncidentStatusChange}
         onConfirmPublicReport={handleConfirmPublicReport}
+        onInvestigatorConfirm={handleInvestigatorConfirm}
         onEdit={
           selectedIncident && canManage
             ? () => openEditIncidentForm(selectedIncident)

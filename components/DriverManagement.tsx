@@ -17,16 +17,21 @@ import {
   CheckCircle,
   Clock,
   Loader2,
-  AlertCircle
+  RefreshCw,
+  Search,
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { notify } from './utils/notify';
 import { driverApi, vehicleApi, parseListResponse } from './utils/api';
-import { isGlobalDataScope, listParamsForDataEntry } from './utils/stationScope';
+import {
+  deferListUntilStationPicked,
+  emptyPaginatedListPayload,
+  isGlobalDataScope,
+  listParamsForDataEntry,
+} from './utils/stationScope';
 import { useDataEntryStation } from './shared/hooks/useDataEntryStation';
 import { DataEntryStationBanner } from './shared/DataEntryStationBanner';
 import { formatStationRefId } from './utils/stationPicker';
-import { StationFormSelect } from './shared/StationFormSelect';
 import {
   toDriverApiPayload,
   formatDriverLicenseExpiry,
@@ -34,8 +39,12 @@ import {
 } from './utils/driverForm';
 import { usePaginatedEntityList } from './shared/hooks/usePaginatedEntityList';
 import { TablePagination } from './shared/TablePagination';
-import { Alert, AlertDescription } from './ui/alert';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { ScrollableTable } from './shared/ScrollableTable';
+import { PageHeader } from './shared/PageHeader';
+import { DashboardStatCard } from './Dashboard/DashboardStatCard';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
+import { RegisterDriverDialog } from './DriverManagement/RegisterDriverDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Textarea } from './ui/textarea';
@@ -48,6 +57,7 @@ type VehicleOption = {
   make?: string;
   model?: string;
   driverId?: string;
+  stationId?: string | number;
 };
 
 function formatVehicleRefId(id: number | string): string {
@@ -100,13 +110,27 @@ export function DriverManagement() {
   const isGlobalUser = isGlobalDataScope(user?.role);
   const stationId = user?.stationId;
   const dataEntry = useDataEntryStation();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const fetchDrivers = useCallback(
-    (page: number, limit: number) =>
-      driverApi.getAll(
-        listParamsForDataEntry(user, dataEntry.effectiveStationId, { page, limit })
-      ),
-    [user, dataEntry.effectiveStationId]
+    (page: number, limit: number) => {
+      if (deferListUntilStationPicked(user, dataEntry.stationId)) {
+        return Promise.resolve({
+          success: true,
+          data: emptyPaginatedListPayload('drivers', limit),
+        });
+      }
+      return driverApi.getAll(
+        listParamsForDataEntry(user, dataEntry.effectiveStationId, {
+          page,
+          limit,
+          search: searchTerm.trim() || undefined,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+        })
+      );
+    },
+    [user, dataEntry.stationId, dataEntry.effectiveStationId, searchTerm, statusFilter]
   );
 
   const {
@@ -119,10 +143,13 @@ export function DriverManagement() {
     page,
     setPage,
     pagination,
+    pageSize,
+    setPageSize,
   } = usePaginatedEntityList<DriverRecord>({
     fetchFn: fetchDrivers,
     entityKey: 'drivers',
     errorMessage: 'Failed to load drivers',
+    resetPageDeps: [dataEntry.effectiveStationId, searchTerm, statusFilter],
   });
 
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -137,7 +164,8 @@ export function DriverManagement() {
     licenseExpiry: '',
     experience: '',
     address: '',
-    emergencyContact: ''
+    emergencyContact: '',
+    vehicleId: '',
   });
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
@@ -166,12 +194,15 @@ export function DriverManagement() {
     return map;
   }, [dataEntry.stations]);
 
-  const userDrivers = useMemo(() => {
-    if (isGlobalUser) return drivers;
-    const scopedId = formatStationRefId(user?.stationId);
-    if (!scopedId) return drivers;
-    return drivers.filter((d) => formatStationRefId(d.stationId) === scopedId);
-  }, [drivers, isGlobalUser, user?.stationId]);
+  const registerVehicleOptions = useMemo(() => {
+    const sid = registerStationId || formatStationRefId(user?.stationId);
+    if (!sid) return vehicles;
+    return vehicles.filter((v) => {
+      const matchesStation = formatStationRefId(v.stationId) === sid;
+      const unassigned = !v.driverId;
+      return matchesStation && unassigned;
+    });
+  }, [vehicles, registerStationId, user?.stationId]);
 
   const loadVehicles = useCallback(async () => {
     try {
@@ -195,6 +226,15 @@ export function DriverManagement() {
   useEffect(() => {
     void loadVehicles();
   }, [loadVehicles]);
+
+  useEffect(() => {
+    if (!showAddDialog) return;
+    const defaultStation =
+      dataEntry.effectiveStationId || formatStationRefId(user?.stationId ?? '');
+    if (defaultStation && !registerStationId) {
+      setRegisterStationId(defaultStation);
+    }
+  }, [showAddDialog, dataEntry.effectiveStationId, user?.stationId, registerStationId]);
 
   useEffect(() => {
     if (!showAddDialog) return;
@@ -357,6 +397,7 @@ export function DriverManagement() {
         toDriverApiPayload({
           ...newDriver,
           stationId: sid,
+          vehicleId: newDriver.vehicleId || undefined,
         })
       );
 
@@ -370,6 +411,7 @@ export function DriverManagement() {
           experience: '',
           address: '',
           emergencyContact: '',
+          vehicleId: '',
         });
         setShowAddDialog(false);
         notify.success(`Driver ${newDriver.name} added successfully`);
@@ -413,18 +455,36 @@ export function DriverManagement() {
     return <Badge className="bg-green-100 text-green-800">Valid</Badge>;
   };
 
+  const totalDrivers = pagination?.totalItems ?? drivers.length;
+  const activeCount = drivers.filter((d) => d.status === 'active').length;
+  const onLeaveCount = drivers.filter((d) => d.status === 'on_leave').length;
+  const expiringCount = drivers.filter((d) => {
+    if (!d.licenseExpiry) return false;
+    const expiryDate = new Date(String(d.licenseExpiry).slice(0, 10));
+    if (Number.isNaN(expiryDate.getTime())) return false;
+    const days = Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 3600 * 24));
+    return days < 30;
+  }).length;
+
+  const pageDescription = isGlobalUser
+    ? 'Licenses, assignments, and compliance across the RISE driver roster.'
+    : `Drivers for ${user?.stationName ?? 'your station'} — registration, vehicles, and status.`;
+
+  const awaitingStationPick =
+    dataEntry.needsPicker && deferListUntilStationPicked(user, dataEntry.stationId);
+
   const DriverCard = ({ driver }: { driver: any }) => (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center space-x-2">
-              <UserCheck className="h-5 w-5" />
-              <span>{driver.name}</span>
+    <Card className="rounded-xl ring-1 ring-border/50 shadow-sm">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <UserCheck className="h-4 w-4 text-primary shrink-0" />
+              <span className="truncate">{String(driver.name ?? '')}</span>
             </CardTitle>
-            <p className="text-sm text-gray-600">{driver.id}</p>
+            <p className="text-xs text-muted-foreground font-mono truncate">{String(driver.id ?? '')}</p>
           </div>
-          {getStatusBadge(driver.status)}
+          {getStatusBadge(String(driver.status ?? ''))}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -497,17 +557,17 @@ export function DriverManagement() {
     </Card>
   );
 
-  if (loading) {
+  if (loading && drivers.length === 0 && !error && !awaitingStationPick) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] p-6">
-        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8] mb-4" />
-        <p className="text-muted-foreground">Loading drivers...</p>
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading drivers…" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="min-h-full rise-dashboard-page">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       {dataEntry.needsPicker && (
         <DataEntryStationBanner
           stationId={dataEntry.stationId}
@@ -516,273 +576,290 @@ export function DriverManagement() {
           loading={dataEntry.loading}
           loadError={dataEntry.loadError}
           onRetry={() => void dataEntry.reloadStations()}
+          description={dataEntry.pickerDescription}
         />
       )}
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">
-            {isGlobalUser ? 'All Drivers' : 'My Drivers'}
-          </h1>
-          <p className="text-gray-600">
-            {isGlobalUser 
-              ? 'Manage all drivers across RISE stations' 
-              : `Manage drivers for ${user?.stationName}`
-            }
-          </p>
-        </div>
-        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Register Driver
+
+      <PageHeader
+        title="Driver management"
+        description={pageDescription}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refresh({ toastOnError: true })}
+              disabled={loading || awaitingStationPick}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
             </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Register New Driver</DialogTitle>
-              <DialogDescription>
-                Add a new driver to the RISE transport system. All fields are required.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              {(dataEntry.needsPicker || isGlobalUser) && (
-                <StationFormSelect
-                  value={registerStationId}
-                  stations={dataEntry.stations}
-                  onChange={setRegisterStationId}
-                />
-              )}
-              <div>
-                <Label htmlFor="driverName">Full Name</Label>
-                <Input
-                  id="driverName"
-                  value={newDriver.name}
-                  onChange={(e) => setNewDriver({...newDriver, name: e.target.value})}
-                  placeholder="e.g., Kwame Asante"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="phone">Phone Number</Label>
-                  <Input
-                    id="phone"
-                    value={newDriver.phone}
-                    onChange={(e) => setNewDriver({...newDriver, phone: e.target.value})}
-                    placeholder="+233 XX XXX XXXX"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={newDriver.email}
-                    onChange={(e) => setNewDriver({...newDriver, email: e.target.value})}
-                    placeholder="driver@email.com"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="license">License Number</Label>
-                  <Input
-                    id="license"
-                    value={newDriver.licenseNumber}
-                    onChange={(e) => setNewDriver({...newDriver, licenseNumber: e.target.value})}
-                    placeholder="DL-GH-XXXXXX"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="expiry">License Expiry</Label>
-                  <Input
-                    id="expiry"
-                    type="date"
-                    value={newDriver.licenseExpiry}
-                    onChange={(e) => setNewDriver({...newDriver, licenseExpiry: e.target.value})}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    SMS reminders are sent 7 days, 3 days, and on the expiry date.
-                  </p>
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="experience">Years of Experience</Label>
-                <Input
-                  id="experience"
-                  type="number"
-                  value={newDriver.experience}
-                  onChange={(e) => setNewDriver({...newDriver, experience: e.target.value})}
-                  placeholder="5"
-                />
-              </div>
-              <div>
-                <Label htmlFor="address">Address</Label>
-                <Textarea
-                  id="address"
-                  value={newDriver.address}
-                  onChange={(e) => setNewDriver({...newDriver, address: e.target.value})}
-                  placeholder="Full residential address"
-                />
-              </div>
-              <div>
-                <Label htmlFor="emergency">Emergency Contact</Label>
-                <Input
-                  id="emergency"
-                  value={newDriver.emergencyContact}
-                  onChange={(e) => setNewDriver({...newDriver, emergencyContact: e.target.value})}
-                  placeholder="+233 XX XXX XXXX"
-                />
-              </div>
-              <Button onClick={handleAddDriver} className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Registering...
-                  </>
-                ) : (
-                  'Register Driver'
-                )}
-              </Button>
+            <Button
+              className="shadow-sm"
+              disabled={awaitingStationPick}
+              onClick={() => setShowAddDialog(true)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Register driver
+            </Button>
+          </>
+        }
+      />
+
+      {error ? (
+        <RiseStatusAlert type="error" title="Could not load drivers">
+          {error}
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => void refresh({ toastOnError: true })}
+          >
+            Try again
+          </Button>
+        </RiseStatusAlert>
+      ) : null}
+
+      {!awaitingStationPick ? (
+        <section className="rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm p-4 sm:p-5 ring-1 ring-border/40">
+          <h2 className="text-sm font-semibold tracking-tight mb-4">Overview</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+            <DashboardStatCard
+              title="Drivers"
+              value={totalDrivers}
+              icon={UserCheck}
+              accent="blue"
+              hint="Total in registry"
+            />
+            <DashboardStatCard
+              title="Active"
+              value={activeCount}
+              icon={CheckCircle}
+              accent="emerald"
+              hint="On this page"
+            />
+            <DashboardStatCard
+              title="On leave"
+              value={onLeaveCount}
+              icon={Clock}
+              accent="amber"
+              hint="On this page"
+            />
+            <DashboardStatCard
+              title="License ≤30 days"
+              value={expiringCount}
+              icon={AlertTriangle}
+              accent="violet"
+              hint="Renewal attention"
+            />
+          </div>
+        </section>
+      ) : null}
+
+      <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 overflow-hidden">
+        <CardHeader className="space-y-4 border-b border-border/60 bg-muted/20 pb-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <CardTitle className="text-lg font-semibold">Driver registry</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                {awaitingStationPick
+                  ? 'Select a station above to load drivers'
+                  : `${totalDrivers} driver${totalDrivers === 1 ? '' : 's'} · search and filter`}
+              </p>
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Driver Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-6 text-center">
-            <UserCheck className="h-8 w-8 mx-auto mb-2 text-[#193cb8]" />
-            <p className="text-2xl font-bold">{userDrivers.length}</p>
-            <p className="text-sm text-gray-600">Total Drivers</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-600" />
-            <p className="text-2xl font-bold">{userDrivers.filter(d => d.status === 'active').length}</p>
-            <p className="text-sm text-gray-600">Active</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Clock className="h-8 w-8 mx-auto mb-2 text-yellow-600" />
-            <p className="text-2xl font-bold">{userDrivers.filter(d => d.status === 'on_leave').length}</p>
-            <p className="text-sm text-gray-600">On Leave</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-red-600" />
-            <p className="text-2xl font-bold">
-              {userDrivers.filter(d => {
-                const expiry = new Date(d.licenseExpiry);
-                const today = new Date();
-                const days = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 3600 * 24));
-                return days < 30;
-              }).length}
-            </p>
-            <p className="text-sm text-gray-600">License Expiring</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Drivers Table for larger screens */}
-      <div className="hidden lg:block">
-        <Card>
-          <CardHeader>
-            <CardTitle>Driver Registry</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>License</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Vehicle</TableHead>
-                  <TableHead>Rating</TableHead>
-                  <TableHead>Station</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {userDrivers.map((driver) => (
-                  <TableRow key={driver.id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{driver.name}</p>
-                        <p className="text-sm text-gray-500">{driver.id}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="text-sm">{driver.phone}</p>
-                        <p className="text-sm text-gray-500">{driver.email}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="text-sm">{driver.licenseNumber}</p>
-                        {getLicenseStatus(driver.licenseExpiry)}
-                      </div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(driver.status)}</TableCell>
-                    <TableCell>{vehicleLabelForDriver(driver, vehiclesById)}</TableCell>
-                    <TableCell>⭐ {driver.rating}/5.0</TableCell>
-                    <TableCell>{driverStationLabel(driver, stationNameById)}</TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => {
-                            setSelectedDriver(driver);
-                            setShowDetailsDialog(true);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => openEditDriver(driver)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => openAssignVehicle(driver)}>
-                          <Car className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            {!awaitingStationPick ? (
+              <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto lg:min-w-[420px]">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Name, phone, license…"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 h-10 bg-background/80"
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="h-10 w-full sm:w-[150px] bg-background/80">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All status</SelectItem>
+                    {driverStatuses.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+          </div>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
+            {awaitingStationPick ? (
+              <div className="py-16 text-center text-sm text-muted-foreground">
+                Pick a station to view and register drivers for that terminal.
+              </div>
+            ) : drivers.length === 0 ? (
+              <div className="py-16 text-center">
+                <UserCheck className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                <p className="text-sm font-medium">No drivers found</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                  {searchTerm.trim() || statusFilter !== 'all'
+                    ? 'Adjust filters or clear search.'
+                    : 'Register a driver to add them to the roster.'}
+                </p>
+                {!searchTerm.trim() && statusFilter === 'all' ? (
+                  <Button className="mt-4" onClick={() => setShowAddDialog(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Register driver
+                  </Button>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                <div className="hidden lg:block">
+                  <ScrollableTable
+                    className="border-0 shadow-none ring-0"
+                    maxHeightClass="max-h-[min(70vh,560px)]"
+                    minWidthClass="min-w-[1000px]"
+                  >
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead>Driver</TableHead>
+                          <TableHead>Contact</TableHead>
+                          <TableHead>License</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Vehicle</TableHead>
+                          <TableHead>Rating</TableHead>
+                          <TableHead>Station</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {drivers.map((driver) => (
+                          <TableRow key={String(driver.id)}>
+                            <TableCell>
+                              <div className="flex items-start gap-3">
+                                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-semibold">
+                                  {String(driver.name ?? '?')
+                                    .trim()
+                                    .charAt(0)
+                                    .toUpperCase()}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="font-medium truncate max-w-[160px]">
+                                    {String(driver.name ?? '—')}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground font-mono truncate">
+                                    {String(driver.id ?? '')}
+                                  </p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <p className="text-sm">{String(driver.phone ?? '—')}</p>
+                              <p className="text-xs text-muted-foreground truncate max-w-[180px]">
+                                {String(driver.email ?? '')}
+                              </p>
+                            </TableCell>
+                            <TableCell>
+                              <p className="text-sm font-mono">{String(driver.licenseNumber ?? '—')}</p>
+                              <div className="mt-1">{getLicenseStatus(driver.licenseExpiry)}</div>
+                            </TableCell>
+                            <TableCell>{getStatusBadge(String(driver.status ?? ''))}</TableCell>
+                            <TableCell className="max-w-[140px] truncate text-sm">
+                              {vehicleLabelForDriver(driver, vehiclesById)}
+                            </TableCell>
+                            <TableCell className="tabular-nums text-sm">
+                              ⭐ {String(driver.rating ?? '—')}/5
+                            </TableCell>
+                            <TableCell className="text-sm max-w-[120px] truncate">
+                              {driverStationLabel(driver, stationNameById)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  aria-label="View driver"
+                                  onClick={() => {
+                                    setSelectedDriver(driver);
+                                    setShowDetailsDialog(true);
+                                  }}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  aria-label="Edit driver"
+                                  onClick={() => openEditDriver(driver)}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  aria-label="Assign vehicle"
+                                  onClick={() => openAssignVehicle(driver)}
+                                >
+                                  <Car className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollableTable>
+                </div>
+                <div className="lg:hidden grid grid-cols-1 gap-3">
+                  {drivers.map((driver) => (
+                    <DriverCard key={String(driver.id)} driver={driver} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          {!awaitingStationPick ? (
             <TablePagination
               page={page}
               pagination={pagination}
               onPageChange={setPage}
               loading={loading}
               itemLabel="drivers"
+              pageSize={pageSize}
+              onPageSizeChange={setPageSize}
+              alwaysShow
             />
-          </CardContent>
-        </Card>
-      </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
-      {/* Driver Cards for mobile */}
-      <div className="lg:hidden grid grid-cols-1 gap-4">
-        {userDrivers.map((driver) => (
-          <DriverCard key={driver.id} driver={driver} />
-        ))}
-      </div>
+      <RegisterDriverDialog
+        open={showAddDialog}
+        onOpenChange={setShowAddDialog}
+        form={newDriver}
+        onFormChange={(patch) => setNewDriver((prev) => ({ ...prev, ...patch }))}
+        onSubmit={() => void handleAddDriver()}
+        isSubmitting={isSubmitting}
+        showStationPicker={dataEntry.needsPicker || isGlobalUser}
+        registerStationId={registerStationId}
+        onRegisterStationIdChange={setRegisterStationId}
+        stations={dataEntry.stations}
+        vehicleOptions={registerVehicleOptions}
+        formatVehicleRefId={formatVehicleRefId}
+      />
 
       {/* Edit Driver Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md rounded-2xl">
           <DialogHeader>
             <DialogTitle>Edit Driver</DialogTitle>
             <DialogDescription>Update driver profile and status</DialogDescription>
@@ -895,7 +972,7 @@ export function DriverManagement() {
 
       {/* Assign Vehicle Dialog */}
       <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md rounded-2xl">
           <DialogHeader>
             <DialogTitle>Assign Vehicle</DialogTitle>
             <DialogDescription>
@@ -944,7 +1021,7 @@ export function DriverManagement() {
 
       {/* Driver Details Dialog */}
       <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md rounded-2xl">
           <DialogHeader>
             <DialogTitle>Driver Details</DialogTitle>
             <DialogDescription>
@@ -1029,6 +1106,7 @@ export function DriverManagement() {
           )}
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 }

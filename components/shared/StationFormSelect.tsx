@@ -1,8 +1,8 @@
 import React from 'react';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { StationSearchSelect } from './StationSearchSelect';
+import type { StationPickerOption } from '../utils/stationPicker';
 
-type StationOption = { id: string; name: string };
+type StationOption = StationPickerOption;
 
 interface StationFormSelectProps {
   label?: string;
@@ -22,23 +22,13 @@ export function StationFormSelect({
   disabled = false,
 }: StationFormSelectProps) {
   return (
-    <div className="space-y-2">
-      <Label>
-        {label}
-        {required ? ' *' : ''}
-      </Label>
-      <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger>
-          <SelectValue placeholder="Select station" />
-        </SelectTrigger>
-        <SelectContent>
-          {stations.map((s) => (
-            <SelectItem key={s.id} value={s.id}>
-              {s.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+    <StationSearchSelect
+      label={label + (required ? '' : ' (optional)')}
+      stations={stations}
+      value={value}
+      onValueChange={onChange}
+      disabled={disabled}
+      placeholder="Search and select station…"
+    />
   );
 }

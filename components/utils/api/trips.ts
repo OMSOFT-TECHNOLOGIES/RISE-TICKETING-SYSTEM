@@ -57,6 +57,10 @@ export const tripApi = {
     });
   },
 
+  issuePoliceCheck: async (id: string): Promise<ApiResponse> => {
+    return apiRequest(`/api/trips/${id}/police-check`, { method: 'POST' });
+  },
+
   delete: async (id: string): Promise<ApiResponse> => {
     return apiRequest(`/api/trips/${id}`, { method: 'DELETE' });
   },
@@ -70,11 +74,21 @@ export const tripApi = {
 
   getStatistics: async (params?: {
     stationId?: string;
+    region?: string;
+    district?: string;
     period?: string;
+    from?: string;
+    to?: string;
+    date?: string;
   }): Promise<ApiResponse> => {
     const queryParams = new URLSearchParams();
     if (params?.stationId) queryParams.append('stationId', params.stationId);
+    if (params?.region) queryParams.append('region', params.region);
+    if (params?.district) queryParams.append('district', params.district);
     if (params?.period) queryParams.append('period', params.period);
+    if (params?.from) queryParams.append('from', params.from);
+    if (params?.to) queryParams.append('to', params.to);
+    if (params?.date) queryParams.append('date', params.date);
 
     const queryString = queryParams.toString();
     return apiRequest(`/api/trips/statistics${queryString ? `?${queryString}` : ''}`, {

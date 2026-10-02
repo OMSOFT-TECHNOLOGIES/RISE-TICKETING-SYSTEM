@@ -12,6 +12,10 @@ export interface ETicket {
   departureTime: string;
   arrivalTime?: string;
   seatNumber: string;
+  /** Seats reserved on this booking (defaults to 1). */
+  seats: number;
+  /** Per-seat fare when `fare` is the booking total. */
+  farePerSeat?: number;
   fare: number;
   bookingDate: string;
   vehicle: string;
@@ -51,6 +55,7 @@ export interface BookPassengerInput {
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   emergencyContactRelationship?: string;
+  biometricReference?: string;
 }
 
 export interface IssueETicketOptions {
@@ -61,3 +66,9 @@ export interface IssueETicketOptions {
   /** Send e-ticket SMS immediately (default false — use Done in booking dialog). */
   sendSms?: boolean;
 }
+
+export type IssueETicketResult = {
+  ticket: ETicket;
+  seatsBooked: number;
+  updatedTrip?: Record<string, unknown>;
+};

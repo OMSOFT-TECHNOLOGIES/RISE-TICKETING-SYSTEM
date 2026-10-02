@@ -1,3 +1,5 @@
+import type { DashboardStatsSource, Period } from './dashboardProfile';
+
 export const REGION_COLORS = ['#193cb8', '#10b981', '#f59e0b', '#6366f1', '#ec4899'];
 
 export type ChartPoint = {
@@ -110,6 +112,174 @@ export function greetingForHour(hour: number): string {
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
+}
+
+/** Flatten common `{ stats: { ... } }` / `{ kpis: { ... } }` dashboard payloads. */
+export function unwrapDashboardStatsPayload(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object') return {};
+  const record = { ...(raw as Record<string, unknown>) };
+  for (const nestKey of ['stats', 'kpis', 'metrics', 'overview'] as const) {
+    const nested = record[nestKey];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      Object.assign(record, nested as Record<string, unknown>);
+    }
+  }
+  return record;
+}
+
+export function mapPeriodToStationStatistics(period: Period): string {
+  if (period === 'daily') return 'daily';
+  if (period === 'yearly') return 'monthly';
+  return 'monthly';
+}
+
+function firstNumeric(data: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = data[key];
+    if (value != null && value !== '' && Number.isFinite(Number(value))) {
+      return Number(value);
+    }
+  }
+  return null;
+}
+
+const TRIPS_TODAY_KEYS = [
+  'todayTrips',
+  'tripsToday',
+  'todayTripCount',
+  'tripsTodayCount',
+] as const;
+
+/** Trips departing today when the API sends an explicit count (not lifetime totals). */
+export function readTripsTodayFromStats(data: Record<string, unknown>): number | null {
+  return firstNumeric(data, [...TRIPS_TODAY_KEYS]);
+}
+
+/**
+ * Map dashboard API fields onto stat card keys.
+ * Daily revenue uses period-specific fields only — never lifetime `revenue` / `totalRevenue`.
+ */
+export function normalizeDashboardStats(
+  raw: unknown,
+  period: Period,
+  source: DashboardStatsSource
+): Record<string, number> {
+  const data = unwrapDashboardStatsPayload(raw);
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === 'number' || typeof value === 'string') {
+      const num = Number(value);
+      if (Number.isFinite(num)) out[key] = num;
+    }
+  }
+
+  const adminRevenueKeys =
+    period === 'daily'
+      ? ['monthlyRevenue', 'dailyRevenue', 'revenueToday', 'todayRevenue']
+      : period === 'yearly'
+        ? ['monthlyRevenue', 'yearlyRevenue', 'revenueYtd']
+        : ['monthlyRevenue', 'revenueThisMonth'];
+
+  const stationRevenueKeys =
+    period === 'daily'
+      ? [
+          'stationRevenue',
+          'todayRevenue',
+          'dailyRevenue',
+          'revenueToday',
+          'todayRevenue',
+        ]
+      : period === 'yearly'
+        ? ['stationRevenue', 'yearlyRevenue', 'revenueYtd', 'monthlyRevenue']
+        : ['stationRevenue', 'revenueThisMonth', 'monthlyRevenue', 'revenue'];
+
+  const stationCommissionKeys =
+    period === 'daily'
+      ? [
+          'stationCommission',
+          'todayCommission',
+          'dailyCommission',
+          'commissionToday',
+          'totalCommission',
+          'commission',
+          'tripCommission',
+        ]
+      : period === 'yearly'
+        ? [
+            'stationCommission',
+            'yearlyCommission',
+            'commissionYtd',
+            'monthlyCommission',
+            'totalCommission',
+          ]
+        : [
+            'stationCommission',
+            'monthlyCommission',
+            'commissionThisMonth',
+            'totalCommission',
+            'commission',
+          ];
+
+  if (source === 'admin') {
+    const revenue = firstNumeric(data, adminRevenueKeys);
+    out.monthlyRevenue = revenue ?? 0;
+
+    const trips = firstNumeric(data, [
+      'totalTrips',
+      'tripsInPeriod',
+      'scheduledTrips',
+      'todayTrips',
+      ...TRIPS_TODAY_KEYS,
+    ]);
+    if (trips != null && out.totalTrips == null) out.totalTrips = trips;
+
+    const drivers = firstNumeric(data, ['totalDrivers', 'activeDrivers', 'driverCount']);
+    if (drivers != null && out.totalDrivers == null) out.totalDrivers = drivers;
+
+    const passengers = firstNumeric(data, [
+      'totalPassengers',
+      'passengersBooked',
+      'passengerCount',
+      'passengers',
+    ]);
+    if (passengers != null && out.totalPassengers == null) out.totalPassengers = passengers;
+
+    const incidents = firstNumeric(data, [
+      'activeIncidents',
+      'openIncidents',
+      'investigatingIncidents',
+    ]);
+    if (incidents != null && out.activeIncidents == null) out.activeIncidents = incidents;
+  }
+
+  if (source === 'station') {
+    const stationRevenue = firstNumeric(data, stationRevenueKeys);
+    out.stationRevenue = stationRevenue ?? 0;
+
+    const stationCommission = firstNumeric(data, stationCommissionKeys);
+    out.stationCommission = stationCommission ?? out.stationCommission ?? 0;
+
+    const vehicles = firstNumeric(data, ['stationVehicles', 'activeVehicles', 'vehicleCount']);
+    if (vehicles != null) out.stationVehicles = vehicles;
+
+    const drivers = firstNumeric(data, ['activeDrivers', 'driverCount']);
+    if (drivers != null) out.activeDrivers = drivers;
+
+    const tripsToday = readTripsTodayFromStats(data);
+    if (tripsToday != null) out.todayTrips = tripsToday;
+  }
+
+  return out;
+}
+
+/** Merge dashboard + station statistics API payloads (same period). */
+export function mergeDashboardStatPayloads(
+  ...sources: (unknown | null | undefined)[]
+): Record<string, unknown> {
+  return sources.reduce<Record<string, unknown>>((acc, raw) => {
+    if (raw == null) return acc;
+    return { ...acc, ...unwrapDashboardStatsPayload(raw) };
+  }, {});
 }
 
 export function formatStatValue(

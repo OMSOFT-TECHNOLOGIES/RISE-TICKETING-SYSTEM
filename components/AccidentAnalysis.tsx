@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { BarChart3, FileText, LayoutGrid, List } from 'lucide-react';
 import { useAuth } from './AuthContext';
+import { isRoadSafetyManagerRole } from './constants/userRoles';
 import { AccessRestricted } from './AccessRestricted';
+import { checkPageAccess, getRestrictionMessage } from './utils/accessControl';
 import { notify } from './utils/notify';
 import { accidentApi, vehicleApi, parseListResponse } from './utils/api';
 import { listParamsForUser } from './utils/stationScope';
 import { useEntityList } from './shared/hooks/useEntityList';
 import { useClientPagination } from './shared/hooks/useClientPagination';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Card, CardContent } from './ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
+import { Button } from './ui/button';
 import { ACCIDENT_TAB_TRIGGER_CLASS, DEFAULT_NEW_ACCIDENT } from './AccidentAnalysis/constants';
 import type {
   Accident,
@@ -37,7 +41,9 @@ import {
 } from './AccidentAnalysis/components/ReportAccidentDialog';
 
 export function AccidentAnalysis() {
-  const { user } = useAuth();
+  const { user, hasPermission, isSuperAdmin } = useAuth();
+  const isRoadSafetyManager = isRoadSafetyManagerRole(user?.role);
+  const allowManualReport = !isRoadSafetyManager;
 
   const fetchAccidents = useCallback(() => accidentApi.getAll(), []);
   const {
@@ -80,6 +86,8 @@ export function AccidentAnalysis() {
     page: accidentPage,
     setPage: setAccidentPage,
     pagination: accidentPagination,
+    pageSize: accidentPageSize,
+    setPageSize: setAccidentPageSize,
   } = useClientPagination(filteredAccidents, undefined, accidentResetKey);
 
   const stats = useMemo(() => calculateStats(accidents), [accidents]);
@@ -230,68 +238,87 @@ export function AccidentAnalysis() {
     notify.success('Accident data exported successfully');
   };
 
-  if (user?.role !== 'admin' && user?.role !== 'super_admin') {
+  if (!checkPageAccess('accident-analysis', hasPermission, isSuperAdmin, user?.role)) {
+    const restriction = getRestrictionMessage('accident-analysis');
     return (
-      <AccessRestricted message="Only administrators can access accident analysis." />
+      <AccessRestricted
+        title={restriction.title}
+        message={restriction.message}
+        suggestion={restriction.suggestion}
+      />
     );
   }
 
-  if (loading) {
+  if (loading && accidents.length === 0 && !error) {
     return (
-      <div className="min-h-full bg-muted/30 flex items-center justify-center py-24">
-        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8]" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-full bg-muted/30 flex flex-col items-center justify-center py-24 px-6 text-center">
-        <p className="text-sm text-muted-foreground mb-4">{error}</p>
-        <button
-          type="button"
-          onClick={() => refresh({ toastOnError: true })}
-          className="text-sm font-medium text-[#193cb8] hover:underline"
-        >
-          Try again
-        </button>
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading accident records…" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-muted/30">
-      <AccidentCommandHeader
-        stats={stats}
-        criticalCount={criticalCount}
-        onReportClick={() => setShowReportDialog(true)}
-        onExportClick={exportData}
-      />
+    <div className="min-h-full rise-dashboard-page">
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        <AccidentCommandHeader
+          stats={stats}
+          criticalCount={criticalCount}
+          onReportClick={() => setShowReportDialog(true)}
+          onExportClick={exportData}
+          onRefresh={() => void refresh({ toastOnError: true })}
+          loading={loading}
+          allowManualReport={allowManualReport}
+          isRoadSafetyManager={isRoadSafetyManager}
+        />
 
-      <div className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
+        {error ? (
+          <RiseStatusAlert type="error" title="Could not load accidents">
+            {error}
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => void refresh({ toastOnError: true })}
+            >
+              Try again
+            </Button>
+          </RiseStatusAlert>
+        ) : null}
+
         <AccidentKpiDashboard stats={stats} />
 
-        <Card className="border shadow-none">
-          <CardContent className="p-0">
-            <Tabs defaultValue="overview" className="w-full">
-              <div className="px-5 pt-5 pb-0 border-b">
-                <TabsList className="grid w-full grid-cols-4 h-auto gap-1 bg-muted/50 p-1.5 rounded-lg border shadow-none">
+        <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 overflow-hidden border-0">
+          <Tabs defaultValue="overview" className="w-full">
+            <CardHeader className="border-b border-border/60 bg-muted/20 pb-4 space-y-4">
+              <div>
+                <CardTitle className="text-lg font-semibold">Accident workspace</CardTitle>
+                <CardDescription className="mt-1">
+                  Overview, registry, analytics, and export templates in one place.
+                </CardDescription>
+              </div>
+              <div className="rise-segment-tabs w-full max-w-2xl">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="overview" className={ACCIDENT_TAB_TRIGGER_CLASS}>
+                    <LayoutGrid className="h-4 w-4 shrink-0 opacity-80" />
                     Overview
                   </TabsTrigger>
                   <TabsTrigger value="accidents" className={ACCIDENT_TAB_TRIGGER_CLASS}>
-                    Accidents
+                    <List className="h-4 w-4 shrink-0 opacity-80" />
+                    Registry
                   </TabsTrigger>
                   <TabsTrigger value="analytics" className={ACCIDENT_TAB_TRIGGER_CLASS}>
+                    <BarChart3 className="h-4 w-4 shrink-0 opacity-80" />
                     Analytics
                   </TabsTrigger>
                   <TabsTrigger value="reports" className={ACCIDENT_TAB_TRIGGER_CLASS}>
+                    <FileText className="h-4 w-4 shrink-0 opacity-80" />
                     Reports
                   </TabsTrigger>
                 </TabsList>
               </div>
-
-              <div className="p-5">
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="p-4 sm:p-6">
                 <TabsContent value="overview" className="mt-0">
                   <AccidentOverviewTab
                     accidents={accidents}
@@ -301,18 +328,20 @@ export function AccidentAnalysis() {
                 </TabsContent>
 
                 <TabsContent value="accidents" className="mt-0">
-                  <AccidentRegistryTab
-                    accidents={pagedAccidents}
-                    totalMatching={filteredAccidents.length}
-                    filters={filters}
-                    onFiltersChange={(updates) => setFilters((prev) => ({ ...prev, ...updates }))}
-                    onViewAccident={handleViewAccident}
-                    onReportClick={() => setShowReportDialog(true)}
-                    onExportClick={exportData}
-                    page={accidentPage}
-                    pagination={accidentPagination}
-                    onPageChange={setAccidentPage}
-                  />
+                  <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
+                    <AccidentRegistryTab
+                      accidents={pagedAccidents}
+                      totalMatching={filteredAccidents.length}
+                      filters={filters}
+                      onFiltersChange={(updates) => setFilters((prev) => ({ ...prev, ...updates }))}
+                      onViewAccident={handleViewAccident}
+                      page={accidentPage}
+                      pagination={accidentPagination}
+                      onPageChange={setAccidentPage}
+                      pageSize={accidentPageSize}
+                      onPageSizeChange={setAccidentPageSize}
+                    />
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="analytics" className="mt-0">
@@ -326,8 +355,8 @@ export function AccidentAnalysis() {
                   <AccidentReportsTab />
                 </TabsContent>
               </div>
-            </Tabs>
-          </CardContent>
+            </CardContent>
+          </Tabs>
         </Card>
       </div>
 

@@ -28,7 +28,9 @@ export interface DeathTrapReport {
   reportedAt: string;
   status: DeathTrapStatus;
   images?: string[];
+  videos?: string[];
   affectedRoutes: string[];
+  affectedNotes?: string;
   estimatedRepairCost?: number;
   priorityScore: number;
   assignedTo?: string;

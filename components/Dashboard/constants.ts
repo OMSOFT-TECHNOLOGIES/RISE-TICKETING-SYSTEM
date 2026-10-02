@@ -18,13 +18,17 @@ export function periodLabel(period: Period): string {
   }
 }
 
-export function periodStatHint(period: Period): string {
-  switch (period) {
-    case 'daily':
-      return 'Showing today’s figures';
-    case 'monthly':
-      return 'Showing this month';
-    case 'yearly':
-      return 'Showing year to date';
+export function periodStatHint(period: Period, periodOffset = 0): string {
+  if (periodOffset === 0) {
+    switch (period) {
+      case 'daily':
+        return 'Showing today’s figures';
+      case 'monthly':
+        return 'Showing this month';
+      case 'yearly':
+        return 'Showing year to date';
+    }
   }
+  // Detailed label when browsing previous ranges (set by DashboardPeriodBar via prop).
+  return '';
 }

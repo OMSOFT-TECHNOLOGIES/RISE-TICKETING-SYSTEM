@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Progress } from './ui/progress';
+import { Label } from './ui/label';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, AreaChart, Area
@@ -26,9 +27,14 @@ import {
   Printer,
   Mail,
   RefreshCw,
-  Loader2,
   AlertCircle,
+  LayoutGrid,
+  BarChart3,
 } from 'lucide-react';
+import { cn } from './ui/utils';
+import { PageHeader } from './shared/PageHeader';
+import { DashboardStatCard } from './Dashboard/DashboardStatCard';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
 import { format } from 'date-fns';
 import { useAuth } from './AuthContext';
 import { reportApi, stationApi, tripApi, parseListResponse } from './utils/api';
@@ -44,8 +50,9 @@ import {
   mapMonthlyComparison,
 } from './Reports/reportDataUtils';
 
-const REPORT_TAB_TRIGGER_CLASS =
-  'rounded-md py-2.5 text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:font-semibold data-[state=active]:ring-1 data-[state=active]:ring-emerald-700/40';
+const REPORT_TAB_TRIGGER_CLASS = 'justify-center gap-1.5 px-3 text-sm font-medium';
+
+const REPORT_CHART_CARD_CLASS = 'rounded-2xl shadow-sm ring-1 ring-border/50 border-0';
 
 const TRIP_STATUS_COLORS = ['#22c55e', '#193cb8', '#f59e0b', '#ef4444'];
 
@@ -244,47 +251,72 @@ export function Reports() {
 
   const operationsSummary = operationsData ?? {};
 
-  return (
-    <div className="flex flex-col gap-6 p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Reports & Analytics</h1>
-          <p className="text-muted-foreground">
-            Comprehensive reporting system for operations, revenue, and performance analysis
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={handlePrintReport} variant="outline" size="sm">
-            <Printer className="h-4 w-4 mr-2" />
-            Print
-          </Button>
-          <Button onClick={handleEmailReport} variant="outline" size="sm">
-            <Mail className="h-4 w-4 mr-2" />
-            Email
-          </Button>
-          <Button onClick={() => fetchAllReports()} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+  const hasAnyReportData = Boolean(
+    overviewData || financialData || operationsData || performanceData
+  );
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Report Filters
-          </CardTitle>
-          <CardDescription>
-            Configure parameters for your reports and analytics
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+  if (loading && !hasAnyReportData && !error) {
+    return (
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading reports…" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-full rise-dashboard-page">
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        <PageHeader
+          title="Reports & analytics"
+          description="Operations, revenue, and performance analysis for the selected period, station, and route."
+          actions={
+            <>
+              <Button onClick={handlePrintReport} variant="outline" size="sm">
+                <Printer className="h-4 w-4 mr-2" />
+                Print
+              </Button>
+              <Button onClick={handleEmailReport} variant="outline" size="sm">
+                <Mail className="h-4 w-4 mr-2" />
+                Email
+              </Button>
+              <Button
+                onClick={() => void fetchAllReports()}
+                variant="outline"
+                size="sm"
+                disabled={loading}
+              >
+                <RefreshCw className={cn('h-4 w-4 mr-2', loading && 'animate-spin')} />
+                Refresh
+              </Button>
+            </>
+          }
+        />
+
+        {error && !hasAnyReportData ? (
+          <RiseStatusAlert type="error" title="Could not load reports">
+            {error}
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => void fetchAllReports()}>
+              Try again
+            </Button>
+          </RiseStatusAlert>
+        ) : null}
+
+        <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 border-0 overflow-hidden">
+          <CardHeader className="border-b border-border/60 bg-muted/20 pb-4">
+            <CardTitle className="text-lg font-semibold flex items-center gap-2">
+              <Filter className="h-5 w-5 text-muted-foreground" />
+              Report filters
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Date range, station, and route scope export and chart data below.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 p-4 sm:p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Report Type</label>
+              <Label>Report type (export)</Label>
               <Select value={reportType} onValueChange={setReportType}>
-                <SelectTrigger>
+                <SelectTrigger className="h-10 bg-background/80">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -297,10 +329,10 @@ export function Reports() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Date Range</label>
+              <Label>Date range</Label>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-start text-left">
+                  <Button variant="outline" className="w-full h-10 justify-start text-left bg-background/80">
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {dateRange.from && dateRange.to
                       ? `${format(dateRange.from, 'MMM dd')} - ${format(dateRange.to, 'MMM dd')}`
@@ -323,13 +355,13 @@ export function Reports() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Station</label>
+              <Label>Station</Label>
               <Select value={stationFilter} onValueChange={setStationFilter}>
-                <SelectTrigger>
+                <SelectTrigger className="h-10 bg-background/80">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Stations</SelectItem>
+                  <SelectItem value="all">All stations</SelectItem>
                   {stationOptions.map((station) => (
                     <SelectItem key={station.id} value={station.id}>
                       {station.name}
@@ -340,13 +372,13 @@ export function Reports() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Route</label>
+              <Label>Route</Label>
               <Select value={routeFilter} onValueChange={setRouteFilter}>
-                <SelectTrigger>
+                <SelectTrigger className="h-10 bg-background/80">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Routes</SelectItem>
+                  <SelectItem value="all">All routes</SelectItem>
                   {routeOptions.map((route) => (
                     <SelectItem key={route} value={route}>
                       {route}
@@ -357,8 +389,8 @@ export function Reports() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 pt-4 border-t">
-            <Button onClick={() => handleGenerateReport('pdf')} disabled={isGenerating}>
+          <div className="flex flex-wrap gap-2 pt-4 border-t border-border/60">
+            <Button onClick={() => void handleGenerateReport('pdf')} disabled={isGenerating}>
               {isGenerating ? (
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
               ) : (
@@ -383,111 +415,94 @@ export function Reports() {
               Export CSV
             </Button>
           </div>
-        </CardContent>
-      </Card>
-
-      {loading && (
-        <div className="flex flex-col items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-[#193cb8] mb-4" />
-          <p className="text-muted-foreground">Loading report data...</p>
-        </div>
-      )}
-
-      {error && !loading && !overviewData && !financialData && !operationsData && !performanceData && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center space-y-4">
-              <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
-              <p className="text-muted-foreground">{error}</p>
-              <Button onClick={() => fetchAllReports()}>Retry</Button>
-            </div>
           </CardContent>
         </Card>
-      )}
 
-      {error && !loading && (overviewData || financialData || operationsData || performanceData) && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
+        {error && hasAnyReportData && !loading ? (
+          <RiseStatusAlert type="warning" title="Some sections failed to load">
+            {error}
+          </RiseStatusAlert>
+        ) : null}
 
-      {!loading && (overviewData || financialData || operationsData || performanceData) && (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 h-auto gap-1 bg-muted/50 p-1.5 rounded-lg border shadow-none">
-            <TabsTrigger value="overview" className={REPORT_TAB_TRIGGER_CLASS}>
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="financial" className={REPORT_TAB_TRIGGER_CLASS}>
-              Financial
-            </TabsTrigger>
-            <TabsTrigger value="operations" className={REPORT_TAB_TRIGGER_CLASS}>
-              Operations
-            </TabsTrigger>
-            <TabsTrigger value="performance" className={REPORT_TAB_TRIGGER_CLASS}>
-              Performance
-            </TabsTrigger>
-          </TabsList>
+        {hasAnyReportData ? (
+          <Card className="rounded-2xl shadow-sm ring-1 ring-border/50 overflow-hidden border-0">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <CardHeader className="border-b border-border/60 bg-muted/20 pb-4 space-y-4">
+                <div>
+                  <CardTitle className="text-lg font-semibold">Analytics workspace</CardTitle>
+                  <CardDescription className="mt-1">
+                    Overview, financial, operations, and performance views for the current filters.
+                  </CardDescription>
+                </div>
+                <div className="rise-segment-tabs w-full max-w-3xl">
+                  <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="overview" className={REPORT_TAB_TRIGGER_CLASS}>
+                      <LayoutGrid className="h-4 w-4 shrink-0 opacity-80" />
+                      Overview
+                    </TabsTrigger>
+                    <TabsTrigger value="financial" className={REPORT_TAB_TRIGGER_CLASS}>
+                      <DollarSign className="h-4 w-4 shrink-0 opacity-80" />
+                      Financial
+                    </TabsTrigger>
+                    <TabsTrigger value="operations" className={REPORT_TAB_TRIGGER_CLASS}>
+                      <Bus className="h-4 w-4 shrink-0 opacity-80" />
+                      Operations
+                    </TabsTrigger>
+                    <TabsTrigger value="performance" className={REPORT_TAB_TRIGGER_CLASS}>
+                      <BarChart3 className="h-4 w-4 shrink-0 opacity-80" />
+                      Performance
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-6">
+                <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
+          <TabsContent value="overview" className="space-y-6 mt-0">
+            <section className="rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm p-4 sm:p-5 ring-1 ring-border/40">
+              <h2 className="text-sm font-semibold tracking-tight mb-4">Period summary</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+                <DashboardStatCard
+                  title="Total revenue"
+                  value={`₵${totalRevenue.toLocaleString()}`}
+                  icon={DollarSign}
+                  accent="emerald"
+                  hint={
+                    overviewData?.revenueGrowth != null
+                      ? `${Number(overviewData.revenueGrowth) > 0 ? '+' : ''}${Number(overviewData.revenueGrowth)}% vs last period`
+                      : 'Selected period'
+                  }
+                />
+                <DashboardStatCard
+                  title="Total trips"
+                  value={totalTrips.toLocaleString()}
+                  icon={Bus}
+                  accent="blue"
+                  hint="Completed & scheduled"
+                />
+                <DashboardStatCard
+                  title="Total passengers"
+                  value={totalPassengers.toLocaleString()}
+                  icon={Users}
+                  accent="violet"
+                  hint="Tickets / manifest"
+                />
+                <DashboardStatCard
+                  title="Avg. occupancy"
+                  value={`${avgOccupancy.toFixed(1)}%`}
+                  icon={Target}
+                  accent="amber"
+                  hint="Fleet utilization"
+                />
+              </div>
+              {overviewData?.revenueGrowth != null ? (
+                <p className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center mt-3 gap-1">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  Revenue trend vs prior period
+                </p>
+              ) : null}
+            </section>
 
-          <TabsContent value="overview" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Total Revenue</p>
-                      <p className="text-2xl font-bold">₵{totalRevenue.toLocaleString()}</p>
-                      {overviewData?.revenueGrowth != null && (
-                        <p className="text-xs text-green-600 flex items-center mt-1">
-                          <TrendingUp className="h-3 w-3 mr-1" />
-                          {Number(overviewData.revenueGrowth) > 0 ? '+' : ''}
-                          {Number(overviewData.revenueGrowth)}% from last period
-                        </p>
-                      )}
-                    </div>
-                    <DollarSign className="h-8 w-8 text-green-600" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Total Trips</p>
-                      <p className="text-2xl font-bold">{totalTrips.toLocaleString()}</p>
-                    </div>
-                    <Bus className="h-8 w-8 text-[#193cb8]" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Total Passengers</p>
-                      <p className="text-2xl font-bold">{totalPassengers.toLocaleString()}</p>
-                    </div>
-                    <Users className="h-8 w-8 text-[#193cb8]" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Avg. Occupancy</p>
-                      <p className="text-2xl font-bold">{avgOccupancy.toFixed(1)}%</p>
-                    </div>
-                    <Target className="h-8 w-8 text-orange-600" />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card>
+            <Card className={REPORT_CHART_CARD_CLASS}>
               <CardHeader>
                 <CardTitle>Revenue & Trips Trend</CardTitle>
                 <CardDescription>Monthly revenue and trip count comparison</CardDescription>
@@ -793,8 +808,16 @@ export function Reports() {
               </Card>
             </div>
           </TabsContent>
-        </Tabs>
-      )}
+                </div>
+              </CardContent>
+            </Tabs>
+          </Card>
+        ) : loading ? (
+          <div className="py-16 flex justify-center">
+            <RisePreloader variant="inline" label="Refreshing analytics…" />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

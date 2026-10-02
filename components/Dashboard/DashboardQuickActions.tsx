@@ -15,8 +15,8 @@ export function DashboardQuickActions({ layout }: { layout: DashboardLayout }) {
   const actions = quickActionsForLayout(layout);
 
   return (
-    <div className="rounded-xl border bg-card shadow-sm overflow-hidden h-full">
-      <div className="border-b px-5 py-3.5">
+    <div className="rounded-2xl border bg-card/80 backdrop-blur-sm shadow-sm overflow-hidden h-full ring-1 ring-border/50">
+      <div className="border-b border-border/80 px-5 py-4">
         <h3 className="text-sm font-semibold">Quick actions</h3>
         <p className="text-xs text-muted-foreground mt-0.5">Tasks matched to your role</p>
       </div>

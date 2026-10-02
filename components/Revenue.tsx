@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { useAuth } from './AuthContext';
 import {
@@ -12,9 +12,8 @@ import {
   Route,
   CreditCard,
   Receipt,
-  Loader2,
   RefreshCw,
-  AlertCircle,
+  Users,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import {
@@ -36,6 +35,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { formatCurrency } from './utils/helpers';
 import { revenueApi } from './utils/api';
 import { notify } from './utils/notify';
+import { cn } from './ui/utils';
+import { PageHeader } from './shared/PageHeader';
+import { DashboardStatCard } from './Dashboard/DashboardStatCard';
+import { RisePreloader, RiseStatusAlert } from './shared/feedback';
+import { ScrollableTable } from './shared/ScrollableTable';
 import {
   loadRevenueFromApi,
   type PaymentMethodItem,
@@ -44,8 +48,8 @@ import {
   type StationRevenueItem,
 } from './Revenue/utils';
 
-const REVENUE_TAB_TRIGGER_CLASS =
-  'rounded-md py-2 text-sm font-medium text-muted-foreground transition-all hover:text-foreground data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:font-semibold data-[state=active]:ring-1 data-[state=active]:ring-emerald-700/40';
+const PERIOD_TAB_CLASS = 'justify-center gap-1.5 px-3 text-sm font-medium';
+const CHART_CARD_CLASS = 'rounded-2xl shadow-sm ring-1 ring-border/50 border-0';
 
 export function Revenue() {
   const { user } = useAuth();
@@ -98,15 +102,17 @@ export function Revenue() {
   };
 
   useEffect(() => {
-    fetchRevenueData();
+    void fetchRevenueData();
   }, [fetchRevenueData]);
 
   if (!user || (user.role !== 'admin' && user.role !== 'super_admin' && user.role !== 'regional_manager')) {
     return (
-      <div className="p-6 text-center">
-        <DollarSign className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-        <h2 className="text-2xl font-bold text-gray-600 mb-2">Access Restricted</h2>
-        <p className="text-gray-500">Only administrators and managers can access revenue reports.</p>
+      <div className="min-h-[420px] rise-dashboard-page p-6 flex flex-col items-center justify-center text-center">
+        <DollarSign className="h-12 w-12 text-muted-foreground/50 mb-4" />
+        <h2 className="text-xl font-semibold tracking-tight">Access restricted</h2>
+        <p className="text-sm text-muted-foreground mt-2 max-w-md">
+          Only administrators and regional managers can access revenue analytics.
+        </p>
       </div>
     );
   }
@@ -125,279 +131,287 @@ export function Revenue() {
     routeRevenue.length > 0 ||
     paymentMethods.length > 0;
 
-  if (loading) {
-    return (
-      <div className="p-6 flex flex-col items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#193cb8] mb-4" />
-        <p className="text-muted-foreground">Loading revenue data...</p>
-      </div>
-    );
-  }
+  const periodLabel =
+    selectedPeriod === 'daily' ? 'Daily' : selectedPeriod === 'quarterly' ? 'Quarterly' : 'Monthly';
 
-  if (error && !hasData) {
+  if (loading && !hasData && !error) {
     return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center space-y-4">
-              <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
-              <div>
-                <h3 className="font-semibold text-lg mb-2">Failed to Load Revenue Data</h3>
-                <p className="text-muted-foreground mb-4">{error}</p>
-                <Button onClick={fetchRevenueData} style={{ backgroundColor: '#193cb8' }}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Retry
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="p-6 min-h-[420px] rise-dashboard-page">
+        <RisePreloader variant="page" label="Loading revenue analytics…" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1>Revenue Management</h1>
-          <p className="text-muted-foreground">
-            Comprehensive revenue tracking and financial analytics
-          </p>
-        </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" onClick={fetchRevenueData}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-          <Button variant="outline" onClick={() => void handleExportReport()}>
-            <Download className="h-4 w-4 mr-2" />
-            Export Report
-          </Button>
-          <Button variant="outline">
-            <Calendar className="h-4 w-4 mr-2" />
-            Custom Period
-          </Button>
-        </div>
-      </div>
+    <div className="min-h-full rise-dashboard-page">
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        <PageHeader
+          title="Revenue analytics"
+          description="Track ticket revenue, payment mix, station and route performance for the selected period."
+          actions={
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void fetchRevenueData()}
+                disabled={loading}
+              >
+                <RefreshCw className={cn('h-4 w-4 mr-2', loading && 'animate-spin')} />
+                Refresh
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => void handleExportReport()}>
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+              <Button variant="outline" size="sm" disabled title="Custom date range coming soon">
+                <Calendar className="h-4 w-4 mr-2" />
+                Custom period
+              </Button>
+            </>
+          }
+        />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Revenue</p>
-                <p className="text-2xl font-bold">{formatCurrency(totalRevenue)}</p>
-              </div>
-              <DollarSign className="h-8 w-8 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Trips</p>
-                <p className="text-2xl font-bold">{totalTrips.toLocaleString()}</p>
-              </div>
-              <Route className="h-8 w-8 text-[#193cb8]" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Avg Revenue/Trip</p>
-                <p className="text-2xl font-bold">{formatCurrency(Math.round(avgRevenuePerTrip))}</p>
-              </div>
-              <Receipt className="h-8 w-8 text-[#193cb8]" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Passengers</p>
-                <p className="text-2xl font-bold">{totalPassengers.toLocaleString()}</p>
-              </div>
-              <CreditCard className="h-8 w-8 text-orange-600" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+        {error && !hasData ? (
+          <RiseStatusAlert type="error" title="Could not load revenue data">
+            {error}
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => void fetchRevenueData()}>
+              Try again
+            </Button>
+          </RiseStatusAlert>
+        ) : null}
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Revenue Analytics</CardTitle>
-            <Tabs value={selectedPeriod} onValueChange={setSelectedPeriod}>
-              <TabsList className="h-auto gap-1 bg-muted/50 p-1.5 rounded-lg border shadow-none">
-                <TabsTrigger value="daily" className={REVENUE_TAB_TRIGGER_CLASS}>
-                  Daily
-                </TabsTrigger>
-                <TabsTrigger value="monthly" className={REVENUE_TAB_TRIGGER_CLASS}>
-                  Monthly
-                </TabsTrigger>
-                <TabsTrigger value="quarterly" className={REVENUE_TAB_TRIGGER_CLASS}>
-                  Quarterly
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+        {error && hasData && !loading ? (
+          <RiseStatusAlert type="warning" title="Some revenue data may be incomplete">
+            {error}
+          </RiseStatusAlert>
+        ) : null}
+
+        <section className="rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm p-4 sm:p-5 ring-1 ring-border/40">
+          <h2 className="text-sm font-semibold tracking-tight mb-4">Period summary</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+            <DashboardStatCard
+              title="Total revenue"
+              value={formatCurrency(totalRevenue)}
+              icon={DollarSign}
+              accent="emerald"
+              hint={`${periodLabel} view`}
+            />
+            <DashboardStatCard
+              title="Total trips"
+              value={totalTrips.toLocaleString()}
+              icon={Route}
+              accent="blue"
+              hint="In selected period"
+            />
+            <DashboardStatCard
+              title="Avg revenue / trip"
+              value={formatCurrency(Math.round(avgRevenuePerTrip))}
+              icon={Receipt}
+              accent="violet"
+              hint="Yield per trip"
+            />
+            <DashboardStatCard
+              title="Total passengers"
+              value={totalPassengers.toLocaleString()}
+              icon={Users}
+              accent="amber"
+              hint="Tickets sold"
+            />
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
-              <h4 className="text-sm font-medium mb-4">Revenue Trend</h4>
-              {chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <RechartsLineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip
-                      formatter={(value, name) => [
-                        formatCurrency(Number(value)),
-                        name === 'revenue' ? 'Revenue' : name === 'profit' ? 'Profit' : 'Costs',
-                      ]}
-                    />
-                    <Line type="monotone" dataKey="revenue" stroke="#193cb8" strokeWidth={3} name="Revenue" />
-                    <Line type="monotone" dataKey="profit" stroke="#82ca9d" strokeWidth={2} name="Profit" />
-                  </RechartsLineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                  No trend data available for this period
+        </section>
+
+        <Card className={CHART_CARD_CLASS}>
+          <CardHeader className="border-b border-border/60 bg-muted/20 pb-4 space-y-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <CardTitle className="text-lg font-semibold">Revenue trends &amp; payments</CardTitle>
+                <CardDescription className="mt-1">
+                  Line trend and payment method mix for the active period granularity.
+                </CardDescription>
+              </div>
+              <Tabs value={selectedPeriod} onValueChange={setSelectedPeriod} className="w-full lg:w-auto">
+                <div className="rise-segment-tabs w-full max-w-md lg:ml-auto">
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="daily" className={PERIOD_TAB_CLASS}>
+                      Daily
+                    </TabsTrigger>
+                    <TabsTrigger value="monthly" className={PERIOD_TAB_CLASS}>
+                      Monthly
+                    </TabsTrigger>
+                    <TabsTrigger value="quarterly" className={PERIOD_TAB_CLASS}>
+                      Quarterly
+                    </TabsTrigger>
+                  </TabsList>
                 </div>
-              )}
+              </Tabs>
             </div>
-            <div>
-              <h4 className="text-sm font-medium mb-4">Payment Methods Distribution</h4>
-              {paymentMethods.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <RechartsPieChart>
-                    <Pie
-                      data={paymentMethods}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#193cb8"
-                      dataKey="value"
+          </CardHeader>
+          <CardContent className="p-4 sm:p-6">
+            <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : ''}>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-sm font-medium mb-4">Revenue trend</h4>
+                  {chartData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <RechartsLineChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip
+                          formatter={(value, name) => [
+                            formatCurrency(Number(value)),
+                            name === 'revenue' ? 'Revenue' : name === 'profit' ? 'Profit' : 'Costs',
+                          ]}
+                        />
+                        <Line type="monotone" dataKey="revenue" stroke="#193cb8" strokeWidth={3} name="Revenue" />
+                        <Line type="monotone" dataKey="profit" stroke="#82ca9d" strokeWidth={2} name="Profit" />
+                      </RechartsLineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-muted-foreground rounded-xl border border-dashed border-border/80 bg-muted/20">
+                      No trend data for this period
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium mb-4">Payment methods</h4>
+                  {paymentMethods.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <RechartsPieChart>
+                        <Pie
+                          data={paymentMethods}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          outerRadius={80}
+                          fill="#193cb8"
+                          dataKey="value"
+                        >
+                          {paymentMethods.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value) => [`${value}%`, 'Percentage']} />
+                        <Legend />
+                      </RechartsPieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-muted-foreground rounded-xl border border-dashed border-border/80 bg-muted/20">
+                      No payment method data
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={CHART_CARD_CLASS}>
+          <CardHeader className="border-b border-border/60 bg-muted/20">
+            <CardTitle className="text-lg font-semibold flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-muted-foreground" />
+              Station performance
+            </CardTitle>
+            <CardDescription>Revenue contribution by station</CardDescription>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-6">
+            {stationRevenue.length > 0 ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-sm font-medium mb-4">Revenue by station</h4>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <RechartsBarChart data={stationRevenue}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Revenue']} />
+                      <Bar dataKey="revenue" fill="#193cb8" />
+                    </RechartsBarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium">Top stations</h4>
+                  {stationRevenue.slice(0, 5).map((station, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-muted/20"
                     >
-                      {paymentMethods.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [`${value}%`, 'Percentage']} />
-                    <Legend />
-                  </RechartsPieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                  No payment method data available
-                </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <MapPin className="h-5 w-5" />
-            <span>Station Performance</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {stationRevenue.length > 0 ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
-                <h4 className="text-sm font-medium mb-4">Revenue by Station</h4>
-                <ResponsiveContainer width="100%" height={250}>
-                  <RechartsBarChart data={stationRevenue}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Revenue']} />
-                    <Bar dataKey="revenue" fill="#193cb8" />
-                  </RechartsBarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium">Top Performing Stations</h4>
-                {stationRevenue.slice(0, 3).map((station, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                    <div>
-                      <p className="font-medium">{station.name}</p>
-                      {station.percentage != null && (
-                        <p className="text-sm text-muted-foreground">{station.percentage}% of total</p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold">{formatCurrency(station.revenue)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="py-8 text-center text-muted-foreground">No station revenue data available</div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Route className="h-5 w-5" />
-            <span>Top Routes by Revenue</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {routeRevenue.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Route</TableHead>
-                  <TableHead>Revenue</TableHead>
-                  <TableHead>Trips</TableHead>
-                  <TableHead>Avg Fare</TableHead>
-                  <TableHead>Performance</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {routeRevenue.map((route, index) => (
-                  <TableRow key={index}>
-                    <TableCell className="font-medium">{route.route}</TableCell>
-                    <TableCell>{formatCurrency(route.revenue)}</TableCell>
-                    <TableCell>{route.trips.toLocaleString()}</TableCell>
-                    <TableCell>{formatCurrency(route.avgFare)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        {index < 2 ? (
-                          <TrendingUp className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <TrendingDown className="h-4 w-4 text-red-600" />
-                        )}
-                        <span className={`text-sm ${index < 2 ? 'text-green-600' : 'text-red-600'}`}>
-                          {index < 2 ? 'Growing' : 'Declining'}
-                        </span>
+                      <div>
+                        <p className="font-medium text-sm">{station.name}</p>
+                        {station.percentage != null ? (
+                          <p className="text-xs text-muted-foreground">{station.percentage}% of total</p>
+                        ) : null}
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <div className="py-8 text-center text-muted-foreground">No route revenue data available</div>
-          )}
-        </CardContent>
-      </Card>
+                      <p className="font-semibold tabular-nums">{formatCurrency(station.revenue)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="py-12 text-center text-muted-foreground">No station revenue data available</div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className={`${CHART_CARD_CLASS} overflow-hidden`}>
+          <CardHeader className="border-b border-border/60 bg-muted/20">
+            <CardTitle className="text-lg font-semibold flex items-center gap-2">
+              <Route className="h-5 w-5 text-muted-foreground" />
+              Top routes by revenue
+            </CardTitle>
+            <CardDescription>Route-level yield and trip counts</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {routeRevenue.length > 0 ? (
+              <ScrollableTable
+                className="border-0 shadow-none ring-0"
+                maxHeightClass="max-h-[min(50vh,420px)]"
+                minWidthClass="min-w-[720px]"
+              >
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent bg-muted/30">
+                      <TableHead>Route</TableHead>
+                      <TableHead>Revenue</TableHead>
+                      <TableHead>Trips</TableHead>
+                      <TableHead>Avg fare</TableHead>
+                      <TableHead>Trend</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {routeRevenue.map((route, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">{route.route}</TableCell>
+                        <TableCell className="tabular-nums">{formatCurrency(route.revenue)}</TableCell>
+                        <TableCell className="tabular-nums">{route.trips.toLocaleString()}</TableCell>
+                        <TableCell className="tabular-nums">{formatCurrency(route.avgFare)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-sm">
+                            {index < 2 ? (
+                              <>
+                                <TrendingUp className="h-4 w-4 text-emerald-600" />
+                                <span className="text-emerald-700 dark:text-emerald-400">Growing</span>
+                              </>
+                            ) : (
+                              <>
+                                <TrendingDown className="h-4 w-4 text-red-600" />
+                                <span className="text-red-700 dark:text-red-400">Declining</span>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollableTable>
+            ) : (
+              <div className="py-12 text-center text-muted-foreground px-6">No route revenue data available</div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

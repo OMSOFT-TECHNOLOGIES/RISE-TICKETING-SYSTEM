@@ -1,8 +1,7 @@
 import React from 'react';
-import { Building2, Loader2 } from 'lucide-react';
+import { Building2 } from 'lucide-react';
 import { Card, CardContent } from '../ui/card';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { StationSearchSelect } from './StationSearchSelect';
 import type { StationOption } from './hooks/useDataEntryStation';
 
 type Props = {
@@ -49,44 +48,18 @@ export function DataEntryStationBanner({
               </p>
             )}
           </div>
-          <div className="w-full sm:w-72 space-y-1.5">
-            <Label htmlFor="data-entry-station" className="text-xs font-medium">
-              Station <span className="text-destructive">*</span>
-            </Label>
-            <Select
-              value={stationId || undefined}
+          <div className="w-full sm:w-80">
+            <StationSearchSelect
+              id="data-entry-station"
+              stations={stations}
+              value={stationId}
               onValueChange={onStationIdChange}
-              disabled={loading}
-            >
-              <SelectTrigger id="data-entry-station" className="bg-background">
-                <SelectValue placeholder={loading ? 'Loading stations…' : 'Select station'} />
-              </SelectTrigger>
-              <SelectContent>
-                {stations.length === 0 ? (
-                  <div className="px-2 py-4 text-center text-sm text-muted-foreground">
-                    {loading ? (
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading…
-                      </span>
-                    ) : (
-                      'No active stations found'
-                    )}
-                  </div>
-                ) : (
-                  stations.map((station) => (
-                    <SelectItem key={station.id} value={station.id}>
-                      <span>{station.name}</span>
-                      {(station.city || station.region) && (
-                        <span className="text-muted-foreground text-xs ml-1">
-                          — {[station.city, station.region].filter(Boolean).join(', ')}
-                        </span>
-                      )}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+              loading={loading}
+              emptyMessage={
+                loading ? 'Loading stations…' : 'No active stations in your assignment area.'
+              }
+              placeholder={loading ? 'Loading stations…' : 'Search and select station…'}
+            />
           </div>
         </div>
       </CardContent>

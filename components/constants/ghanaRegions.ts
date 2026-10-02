@@ -1,4 +1,4 @@
-/** Ghana administrative regions for incident and station reporting. */
+/** Ghana’s 16 administrative regions (2019 reorganization). */
 export const GHANA_REGIONS = [
   'Greater Accra',
   'Ashanti',

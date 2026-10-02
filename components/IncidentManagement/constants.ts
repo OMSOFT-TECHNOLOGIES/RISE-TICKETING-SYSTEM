@@ -50,6 +50,7 @@ export const SEVERITY_OPTIONS = [
 
 export const STATUS_OPTIONS = [
   { value: 'reported', label: 'Reported' },
+  { value: 'confirmed', label: 'Confirmed' },
   { value: 'investigating', label: 'Investigating' },
   { value: 'resolved', label: 'Resolved' },
   { value: 'couldnt_fix', label: "Couldn't fix" },
@@ -64,6 +65,7 @@ export const CONFIRMATION_AGENCY_OPTIONS = [
   { value: 'fire_service', label: 'Fire Services' },
   { value: 'road_safety', label: 'National Road Safety Authority' },
   { value: 'police', label: 'Ghana Police Service' },
+  { value: 'ambulance_service', label: 'Ambulance Service' },
 ] as const;
 
 export const VEHICLE_MODE_OPTIONS = [

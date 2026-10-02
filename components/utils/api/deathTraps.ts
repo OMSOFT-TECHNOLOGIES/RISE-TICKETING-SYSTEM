@@ -41,6 +41,27 @@ export const deathTrapApi = {
     });
   },
 
+  createPublic: async (formData: FormData): Promise<ApiResponse> => {
+    return apiRequest('/api/public/death-traps', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  uploadMedia: async (
+    id: string,
+    photos: File[],
+    videos: File[]
+  ): Promise<ApiResponse> => {
+    const formData = new FormData();
+    photos.forEach((file) => formData.append('photos', file));
+    videos.forEach((file) => formData.append('videos', file));
+    return apiRequest(`/api/death-traps/${encodeURIComponent(id)}/media`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
   update: async (id: string, hazardData: unknown): Promise<ApiResponse> => {
     return apiRequest(`/api/death-traps/${id}`, {
       method: 'PUT',

@@ -4,7 +4,8 @@ export type InsuranceClaimStatus = 'approved' | 'processing' | 'pending' | 'deni
 
 export interface Accident {
   id: string;
-  tripId: string;
+  incidentId?: string;
+  tripId?: string;
   date: string;
   location: string;
   severity: AccidentSeverity;
@@ -21,7 +22,10 @@ export interface Accident {
   roadConditions?: string | null;
   timeOfDay?: string | null;
   reportedBy: string;
-  stationId: string;
+  stationId?: string;
+  assignedToManager?: string;
+  region?: string;
+  district?: string;
   status: AccidentStatus;
   insuranceClaim: InsuranceClaimStatus;
   cost: number;

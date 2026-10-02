@@ -2,6 +2,7 @@ export type IncidentType = 'accident' | 'breakdown' | 'theft' | 'violence' | 'me
 export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type IncidentStatus =
   | 'reported'
+  | 'confirmed'
   | 'investigating'
   | 'resolved'
   | 'couldnt_fix'
@@ -39,6 +40,9 @@ export interface Incident {
   confirmedByAgency?: string;
   confirmedBy?: string;
   confirmedAt?: string;
+  investigatorConfirmedBy?: string;
+  investigatorConfirmedAt?: string;
+  linkedAccidentId?: string;
   passengersInvolved?: number;
   injuriesReported?: number;
   fatalitiesReported?: number;
@@ -99,6 +103,7 @@ export interface IncidentFilters {
 export interface IncidentStats {
   total: number;
   reported: number;
+  confirmed?: number;
   investigating: number;
   resolved: number;
   critical: number;

@@ -42,8 +42,8 @@ function ActivityIcon({ type }: { type: string }) {
 
 export function DashboardActivityFeed({ activities }: { activities: ActivityItem[] }) {
   return (
-    <div className="rounded-xl border bg-card shadow-sm overflow-hidden h-full flex flex-col">
-      <div className="border-b px-5 py-3.5">
+    <div className="rounded-2xl border bg-card/80 backdrop-blur-sm shadow-sm overflow-hidden h-full flex flex-col ring-1 ring-border/50">
+      <div className="border-b border-border/80 px-5 py-4">
         <h3 className="text-sm font-semibold">Recent activity</h3>
         <p className="text-xs text-muted-foreground mt-0.5">Latest updates across your scope</p>
       </div>

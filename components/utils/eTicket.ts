@@ -7,6 +7,7 @@ import type {
   ETicket,
   BookPassengerInput,
   IssueETicketOptions,
+  IssueETicketResult,
   SmsStatus,
 } from './eTicket.types';
 
@@ -37,7 +38,12 @@ export function mapApiTicket(data: Record<string, unknown>): ETicket {
       }) || String(data.departureTime ?? ''),
     arrivalTime: data.arrivalTime as string | undefined,
     seatNumber: String(data.seatNumber ?? 'TBD'),
-    fare: Number(data.fare ?? 0),
+    seats: Math.max(1, Number(data.seats ?? data.seatCount ?? 1)),
+    farePerSeat:
+      data.farePerSeat != null && Number.isFinite(Number(data.farePerSeat))
+        ? Number(data.farePerSeat)
+        : undefined,
+    fare: Number(data.fare ?? data.totalFare ?? 0),
     bookingDate: String(data.bookingDate ?? new Date().toISOString()),
     vehicle: String(data.vehicle ?? 'TBD'),
     driver: String(data.driver ?? 'TBD'),
@@ -179,9 +185,27 @@ function buildTicketPrintHtml(ticket: ETicket): string {
     <div class="row"><span class="label">Ticket</span><span class="value">${safe(ticket.id)}</span></div>
     <div class="row"><span class="label">Passenger</span><span class="value">${safe(ticket.passengerName)}</span></div>
     <div class="row"><span class="label">Phone</span><span class="value">${safe(ticket.passengerPhone)}</span></div>
-    <div class="row"><span class="label">Seat</span><span class="value">${safe(ticket.seatNumber)}</span></div>
+    <div class="row"><span class="label">Seats booked</span><span class="value">${ticket.seats}</span></div>
+    <div class="row"><span class="label">Seat assignment</span><span class="value">${safe(ticket.seatNumber)}</span></div>
     <div class="row"><span class="label">Departure</span><span class="value">${safe(departure.date)} ${safe(departure.time)}</span></div>
-    <div class="row"><span class="label">Fare</span><span class="value">GHS ${ticket.fare.toFixed(2)}</span></div>
+    ${(() => {
+      const seats = Math.max(1, ticket.seats);
+      const perSeat =
+        ticket.farePerSeat != null && ticket.farePerSeat > 0
+          ? ticket.farePerSeat
+          : seats > 1 && ticket.fare > 0
+            ? ticket.fare / seats
+            : ticket.fare;
+      const total =
+        ticket.farePerSeat != null && ticket.farePerSeat > 0
+          ? ticket.farePerSeat * seats
+          : ticket.fare;
+      if (seats > 1) {
+        return `<div class="row"><span class="label">Fare (per seat)</span><span class="value">GHS ${perSeat.toFixed(2)}</span></div>
+    <div class="row"><span class="label">Total fare</span><span class="value">GHS ${total.toFixed(2)}</span></div>`;
+      }
+      return `<div class="row"><span class="label">Fare</span><span class="value">GHS ${total.toFixed(2)}</span></div>`;
+    })()}
     ${
       ticket.vehicle && ticket.vehicle !== 'TBD'
         ? `<div class="row"><span class="label">Vehicle</span><span class="value">${safe(ticket.vehicle)}</span></div>`
@@ -248,11 +272,35 @@ export function printETicket(ticket: ETicket): void {
   setTimeout(cleanup, 60_000);
 }
 
+function extractUpdatedTripFromBookingPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  const nested = payload.trip ?? payload.updatedTrip ?? payload.tripSummary;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
+  }
+  if (
+    payload.bookedSeats != null ||
+    payload.booked != null ||
+    payload.availableSeats != null
+  ) {
+    return {
+      id: payload.tripId,
+      bookedSeats: payload.bookedSeats,
+      booked: payload.booked,
+      available: payload.availableSeats ?? payload.available,
+      capacity: payload.capacity,
+    };
+  }
+  return undefined;
+}
+
 export async function issueETicket(
   input: BookPassengerInput,
   options: IssueETicketOptions = {}
-): Promise<ETicket> {
+): Promise<IssueETicketResult> {
   const { showSuccessToast = true, printTicket = true, sendSms = false } = options;
+  const seatsBooked = Math.max(1, Number(input.seats ?? 1));
   const response = await passengerApi.addToTrip(input.tripId, {
     name: input.passengerName,
     phone: input.passengerPhone,
@@ -261,11 +309,12 @@ export async function issueETicket(
     boardingPoint: input.routeFrom,
     dropoffPoint: input.routeTo,
     fare: input.fare,
-    seats: 1,
+    seats: seatsBooked,
     sendSms,
     emergencyContactName: input.emergencyContactName,
     emergencyContactPhone: input.emergencyContactPhone,
     emergencyContactRelationship: input.emergencyContactRelationship,
+    biometricReference: input.biometricReference,
   });
 
   if (!response.success || !response.data) {
@@ -276,6 +325,19 @@ export async function issueETicket(
 
   const payload = response.data as Record<string, unknown>;
   const ticketData = (payload.ticket ?? payload) as Record<string, unknown>;
+  const farePerSeat = Number(input.fare ?? 0);
+  const apiSeats = Math.max(
+    1,
+    Number(ticketData.seats ?? ticketData.seatCount ?? seatsBooked)
+  );
+  const totalFareFromApi = Number(ticketData.totalFare ?? ticketData.fare ?? 0);
+  const totalFare =
+    totalFareFromApi > 0 && apiSeats === 1 && seatsBooked > 1
+      ? farePerSeat * seatsBooked
+      : totalFareFromApi > 0
+        ? totalFareFromApi
+        : farePerSeat * apiSeats;
+
   const ticket: ETicket = {
     ...mapApiTicket(ticketData),
     routeFrom: String(ticketData.routeFrom ?? input.routeFrom ?? ''),
@@ -286,7 +348,9 @@ export async function issueETicket(
     passengerPhone: String(ticketData.passengerPhone ?? input.passengerPhone),
     passengerEmail: (ticketData.passengerEmail as string | undefined) ?? input.passengerEmail,
     seatNumber: String(ticketData.seatNumber ?? input.seatNumber ?? 'TBD'),
-    fare: Number(ticketData.fare ?? input.fare ?? 0),
+    seats: apiSeats,
+    farePerSeat: farePerSeat > 0 ? farePerSeat : undefined,
+    fare: totalFare,
     vehicle: String(ticketData.vehicle ?? input.vehicle ?? 'TBD'),
     driver: String(ticketData.driver ?? input.driver ?? 'TBD'),
     stationId: String(ticketData.stationId ?? input.stationId ?? ''),
@@ -325,7 +389,9 @@ export async function issueETicket(
     }
   }
 
-  return ticket;
+  const updatedTrip = extractUpdatedTripFromBookingPayload(payload);
+
+  return { ticket, seatsBooked, updatedTrip };
 }
 
 /** Send deferred e-ticket SMS for passengers booked in the current session. */

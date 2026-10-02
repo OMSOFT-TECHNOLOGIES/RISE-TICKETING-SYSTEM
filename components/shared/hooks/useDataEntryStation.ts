@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../AuthContext';
 import { stationApi } from '../../utils/api';
 import {
+  filterStationsForUser,
   mustSelectStationForDataEntry,
   stationIdForDataEntry,
+  stationListQueryForUser,
 } from '../../utils/stationScope';
 import { parseStationsFromApiResponse, type StationPickerOption } from '../../utils/stationPicker';
 import { notify } from '../../utils/notify';
@@ -22,18 +24,29 @@ export function useDataEntryStation() {
     setLoading(true);
     setLoadError(null);
     try {
-      let response = await stationApi.getAll({ status: 'active', limit: 500, page: 1 });
+      const geo = stationListQueryForUser(user);
+      let response = await stationApi.getAll({
+        status: 'active',
+        limit: 500,
+        page: 1,
+        ...geo,
+      });
       if (response.success && response.data) {
         let parsed = parseStationsFromApiResponse(response.data);
         if (parsed.length === 0) {
-          response = await stationApi.getAll({ limit: 500, page: 1 });
+          response = await stationApi.getAll({ limit: 500, page: 1, ...geo });
           if (response.success && response.data) {
             parsed = parseStationsFromApiResponse(response.data);
           }
         }
-        setStations(parsed);
-        if (parsed.length === 0) {
-          setLoadError('No stations returned from the server.');
+        const scoped = filterStationsForUser(parsed, user);
+        setStations(scoped);
+        if (scoped.length === 0) {
+          const districtHint =
+            user?.role === 'district_manager' && user.district
+              ? ` No stations found for district “${user.district}”.`
+              : '';
+          setLoadError(`No stations returned from the server.${districtHint}`);
         }
         return;
       }
@@ -50,7 +63,7 @@ export function useDataEntryStation() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (!needsPicker) {
@@ -78,6 +91,13 @@ export function useDataEntryStation() {
 
   const selectedStation = stations.find((s) => s.id === effectiveStationId);
 
+  const pickerDescription =
+    user?.role === 'district_manager' && user.district
+      ? `Choose a station in ${user.district} to view trips, passengers, tickets, and fleet for that terminal.`
+      : user?.role === 'regional_manager' && user.region
+        ? `Choose a station in ${user.region} to work in that terminal’s context.`
+        : undefined;
+
   return {
     needsPicker,
     stationId,
@@ -89,5 +109,6 @@ export function useDataEntryStation() {
     effectiveStationId,
     selectedStation,
     requireStationId,
+    pickerDescription,
   };
 }
